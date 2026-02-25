@@ -1,0 +1,102 @@
+const { prisma } = require('../config/db');
+
+/**
+ * Get pending balance material receipts:
+ * Items in production_entry with variance/returned BOM that are NOT yet in balance_material_receipt
+ */
+const getPendingBalanceReceipts = async () => {
+    // 1. Get all production entries
+    const productionEntries = await prisma.productionEntry.findMany({
+        orderBy: { processed_date: 'desc' }
+    });
+
+    // 2. Get all processed balance receipts
+    const processedReceipts = await prisma.balanceMaterialReceipt.findMany({
+        select: { production_id: true }
+    });
+    const processedIds = processedReceipts.map(r => r.production_id);
+
+    // 3. Get production indent details for all production entries
+    const productionIds = productionEntries.map(p => p.production_id);
+    const indents = await prisma.productionIndent.findMany({
+        where: { production_id: { in: productionIds } }
+    });
+
+    // 4. Filter entries that have variance and are not yet processed
+    const pending = productionEntries.filter(entry => {
+        if (processedIds.includes(entry.production_id)) return false;
+
+        const bom = entry.bom_consumption || [];
+        // Check if any BOM item has variance, returned or damaged quantity
+        return bom.some(item => (item.diff || 0) > 0 || (item.returned || 0) > 0 || (item.damaged || 0) > 0);
+    });
+
+    return pending.map(entry => {
+        const indent = indents.find(i => i.production_id === entry.production_id);
+        const bom = entry.bom_consumption || [];
+        
+        // Filter only items with variance/returns for display
+        const varianceItems = bom.filter(item => (item.diff || 0) > 0 || (item.returned || 0) > 0 || (item.damaged || 0) > 0);
+
+        return {
+            ...entry,
+            productName: indent ? indent.product_name : 'Unknown',
+            packingSize: indent ? indent.packing_size : '',
+            partyName: indent ? indent.party_name : '',
+            varianceItems
+        };
+    });
+};
+
+/**
+ * Get balance material receipt history
+ */
+const getBalanceReceiptHistory = async () => {
+    const history = await prisma.balanceMaterialReceipt.findMany({
+        orderBy: { received_date: 'desc' }
+    });
+
+    const productionIds = history.map(h => h.production_id);
+    const indents = await prisma.productionIndent.findMany({
+        where: { production_id: { in: productionIds } }
+    });
+
+    const productionEntries = await prisma.productionEntry.findMany({
+        where: { production_id: { in: productionIds } }
+    });
+
+    return history.map(h => {
+        const indent = indents.find(i => i.production_id === h.production_id);
+        const entry = productionEntries.find(p => p.production_id === h.production_id);
+        return {
+            ...h,
+            productName: indent ? indent.product_name : 'Unknown',
+            packingSize: indent ? indent.packing_size : '',
+            partyName: indent ? indent.party_name : '',
+            originalBom: entry ? entry.bom_consumption : []
+        };
+    });
+};
+
+/**
+ * Create balance material receipt
+ */
+const createBalanceReceipt = async (data) => {
+    const { productionId, receivedBy, remarks, materialReceipts } = data;
+
+    return await prisma.balanceMaterialReceipt.create({
+        data: {
+            production_id: productionId,
+            received_by: receivedBy,
+            remarks: remarks,
+            material_receipts: materialReceipts,
+            status: 'Received'
+        }
+    });
+};
+
+module.exports = {
+    getPendingBalanceReceipts,
+    getBalanceReceiptHistory,
+    createBalanceReceipt
+};

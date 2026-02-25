@@ -1,0 +1,19 @@
+Error at 2026-02-25T08:26:09.705Z:
+PrismaClientKnownRequestError: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:131:58
+
+  128 const fs = require('fs');
+  129 
+  130 try {
+→ 131   const result = await prisma.packingRawMaterialIndent.create(
+Unique constraint failed on the fields: (`production_id`)
+    at Vr.handleRequestError (/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/node_modules/@prisma/client/runtime/client.js:65:8172)
+    at Vr.handleAndLogRequestError (/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/node_modules/@prisma/client/runtime/client.js:65:7467)
+    at Vr.request (/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/node_modules/@prisma/client/runtime/client.js:65:7174)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async a (/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/node_modules/@prisma/client/runtime/client.js:75:5816)
+    at async Object.createPackingIndent (/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:131:20)
+    at async /Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/routes/packingRawMaterialRoutes.js:30:20
+Data: {"productionId":"PD-073","bomItems":[]}
+
