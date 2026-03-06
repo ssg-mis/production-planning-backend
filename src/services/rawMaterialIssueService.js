@@ -5,41 +5,38 @@ const { prisma } = require('../config/db');
  * Items in packing_raw_material_indent NOT yet in raw_material_issue
  */
 const getPendingRawMaterialIssues = async () => {
-    // 1. Get all indented items
-    const allIndented = await prisma.packingRawMaterialIndent.findMany({
-        select: { production_id: true }
-    });
-    const indentedIds = allIndented.map(i => i.production_id);
-    if (indentedIds.length === 0) return [];
-
-    // 2. Get items already in raw_material_issue
-    const alreadyIssued = await prisma.rawMaterialIssue.findMany({
-        select: { production_id: true }
-    });
-    const issuedIds = alreadyIssued.map(i => i.production_id);
-
-    // 3. Pending = indented but not yet issued
-    const pendingIds = indentedIds.filter(id => !issuedIds.includes(id));
-    if (pendingIds.length === 0) return [];
-
-    // 4. Fetch production indent details and BOM for these IDs
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: pendingIds } },
-        orderBy: { created_at: 'desc' }
-    });
-
-    const packingIndents = await prisma.packingRawMaterialIndent.findMany({
-        where: { production_id: { in: pendingIds } },
+    // 1. Get all packing indents
+    const allPackingIndents = await prisma.packingRawMaterialIndent.findMany({
         include: { bom_items: true }
     });
+    if (allPackingIndents.length === 0) return [];
 
-    return indents.map(item => {
-        const pIndent = packingIndents.find(p => p.production_id === item.production_id);
+    // 2. Get already issued indent IDs
+    const alreadyIssued = await prisma.rawMaterialIssue.findMany({
+        select: { indent_id: true }
+    });
+    const issuedIndentIds = alreadyIssued.map(i => i.indent_id).filter(Boolean);
+
+    // 3. Pending indents = those not yet issued
+    const pendingPackingIndents = allPackingIndents.filter(p => !issuedIndentIds.includes(p.id));
+    if (pendingPackingIndents.length === 0) return [];
+
+    const productionIds = [...new Set(pendingPackingIndents.map(p => p.production_id))];
+
+    // 4. Fetch production indent details
+    const productionIndents = await prisma.productionIndent.findMany({
+        where: { production_id: { in: productionIds } }
+    });
+
+    return pendingPackingIndents.map(p => {
+        const prodIndent = productionIndents.find(pi => pi.production_id === p.production_id);
         return {
-            ...item,
-            tank_no: item.tank_no,
-            given_from_tank_no: item.given_from_tank_no,
-            bom: pIndent ? pIndent.bom_items : [],
+            ...(prodIndent || {}),
+            id: p.id, // Use Packing Indent ID
+            production_id: p.production_id,
+            packing_indent_id: p.id,
+            oil_qty: Number(p.oil_qty || 0),
+            bom: p.bom_items || [],
             status: 'Pending'
         };
     });
@@ -54,21 +51,24 @@ const getRawMaterialIssueHistory = async () => {
     });
 
     const productionIds = history.map(h => h.production_id);
-    const indents = await prisma.productionIndent.findMany({
+    const indentIds = history.map(h => h.indent_id).filter(Boolean);
+
+    const productionIndents = await prisma.productionIndent.findMany({
         where: { production_id: { in: productionIds } }
     });
 
     const packingIndents = await prisma.packingRawMaterialIndent.findMany({
-        where: { production_id: { in: productionIds } },
+        where: { id: { in: indentIds } },
         include: { bom_items: true }
     });
 
     return history.map(h => {
-        const indent = indents.find(i => i.production_id === h.production_id);
-        const pIndent = packingIndents.find(p => p.production_id === h.production_id);
+        const prodIndent = productionIndents.find(pi => pi.production_id === h.production_id);
+        const pIndent = packingIndents.find(pi => pi.id === h.indent_id);
         return {
             ...h,
-            indentDetails: indent || null,
+            indentDetails: prodIndent || null,
+            oil_qty: h.oil_qty ? Number(h.oil_qty) : (pIndent ? Number(pIndent.oil_qty) : 0),
             bom: pIndent ? pIndent.bom_items : []
         };
     });
@@ -78,11 +78,13 @@ const getRawMaterialIssueHistory = async () => {
  * Create raw material issue record
  */
 const createRawMaterialIssue = async (data) => {
-    const { productionId, remarks, issuedBy } = data;
+    const { productionId, remarks, issuedBy, indentId, oilQty } = data;
 
     return await prisma.rawMaterialIssue.create({
         data: {
             production_id: productionId,
+            indent_id: indentId ? Number(indentId) : null,
+            oil_qty: oilQty ? Number(oilQty) : null,
             remarks: remarks,
             issued_by: issuedBy,
             status: 'Issued'

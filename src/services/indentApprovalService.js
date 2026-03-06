@@ -59,19 +59,61 @@ const getApprovalHistory = async () => {
 
 /**
  * Create new approval/rejection
+ * Handles partial approvals by creating a new pending indent for the remaining balance
  */
 const createApproval = async (data) => {
   const { productionId, approvedWeightKg, status, remarks, givenFromTankNo } = data;
 
+  // 1. Fetch the original indent to get full details and indent_quantity
+  const originalIndent = await prisma.productionIndent.findUnique({
+    where: { production_id: productionId }
+  });
+
+  if (!originalIndent) {
+    throw new Error(`Production indent ${productionId} not found`);
+  }
+
+  const indentQty = parseFloat(originalIndent.indent_quantity) || 0;
+  const approved = parseFloat(approvedWeightKg) || 0;
+
+  // 2. Create the approval record
   const result = await prisma.indentApproval.create({
     data: {
       production_id: productionId,
-      approved_qty: approvedWeightKg || 0,
+      approved_qty: approved,
       status: status,
       remarks: remarks,
       given_from_tank_no: givenFromTankNo || null
     }
   });
+
+  // 3. If partial approval (approved < indentQty), create a new pending indent for the remainder
+  if (status === 'Confirmed' && approved < indentQty) {
+    const remainingQty = indentQty - approved;
+
+    // Generate a new production ID for the remaining indent
+    const { getNextProductionId } = require('./productionIndentService');
+    const newProductionId = await getNextProductionId();
+
+    await prisma.productionIndent.create({
+      data: {
+        production_id: newProductionId,
+        order_id: originalIndent.order_id,
+        product_name: originalIndent.product_name,
+        packing_size: originalIndent.packing_size,
+        packing_type: originalIndent.packing_type,
+        party_name: originalIndent.party_name,
+        oil_required: originalIndent.oil_required,
+        selected_oil: originalIndent.selected_oil,
+        indent_quantity: remainingQty,
+        total_weight_kg: remainingQty,
+        tank_no: originalIndent.tank_no,
+        status: 'Submitted'  // Stays pending for approval
+      }
+    });
+
+    console.log(`Partial approval: created new pending indent ${newProductionId} for remaining ${remainingQty} Kg`);
+  }
 
   return result;
 };

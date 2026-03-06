@@ -31,57 +31,77 @@ const getBOMForProduct = async (productName) => {
 const getPendingPackingIndents = async () => {
   // 1. Get all received items (oil_receipt)
   const allReceived = await prisma.oilReceipt.findMany({
-    select: { production_id: true, received_qty: true }
+    select: { 
+      production_id: true, 
+      received_qty: true
+    }
   });
+  if (allReceived.length === 0) return [];
+
   const receivedIds = allReceived.map(r => r.production_id);
-  if (receivedIds.length === 0) return [];
 
-  // 2. Get items already in packing_raw_material_indent
-  const alreadyIndented = await prisma.packingRawMaterialIndent.findMany({
-    select: { production_id: true }
+  // 2. Get sum of already indented quantities per production_id
+  const indentedSums = await prisma.packingRawMaterialIndent.groupBy({
+    by: ['production_id'],
+    _sum: {
+      oil_qty: true
+    }
   });
-  const indentedIds = alreadyIndented.map(i => i.production_id);
 
-  // 3. Pending = received but not yet indented for packing
-  const pendingIds = receivedIds.filter(id => !indentedIds.includes(id));
-  if (pendingIds.length === 0) return [];
+  const indentedQtyMap = {};
+  indentedSums.forEach(group => {
+    indentedQtyMap[group.production_id] = Number(group._sum.oil_qty || 0);
+  });
 
-  // 4. Fetch production indent details for these IDs
+  // 3. Fetch production indent details for received IDs
   const indents = await prisma.productionIndent.findMany({
-    where: { production_id: { in: pendingIds } },
+    where: { production_id: { in: receivedIds } },
     orderBy: { created_at: 'desc' }
   });
 
-  const dispatchPlans = await prisma.dispatchPlanningPlant.findMany({
-    where: { production_id: { in: pendingIds } }
-  });
-
-  // 5. For each unique product_name, fetch BOM from dispatch DB
-  const uniqueProductNames = [...new Set(indents.map(i => i.product_name))];
+  // 4. Fetch BOM for unique SKUs
+  const uniqueProductNames = [...new Set(indents.flatMap(i =>
+    i.product_name.split(',').map(s => s.trim()).filter(Boolean)
+  ))];
   const bomByProduct = {};
   await Promise.all(uniqueProductNames.map(async (name) => {
     bomByProduct[name] = await getBOMForProduct(name);
   }));
 
-  // 6. Attach BOM and dispatch quantity to each indent item
-  return indents.map(item => {
-    const dPlan = dispatchPlans.find(d => d.production_id === item.production_id);
-    const receipt = allReceived.find(r => r.production_id === item.production_id);
-    return {
-      ...item,
-      tank_no: item.tank_no,
-      given_from_tank_no: item.given_from_tank_no,
-      actual_dispatch_qty: item.indent_quantity,
-      actual_dispatch_kg: item.total_weight_kg,
-      balance_qty: receipt ? receipt.received_qty : 0,
-      bom: bomByProduct[item.product_name] || []
-    };
-  });
+  // 5. Attach BOM and calculate remaining balance
+  // Filter for indents that still have an oil balance left to pack
+  return indents
+    .map(item => {
+      const receipt = allReceived.find(r => r.production_id === item.production_id);
+      const skuNames = item.product_name.split(',').map(s => s.trim()).filter(Boolean);
+      
+      const totalReceivedQty = Number(receipt ? receipt.received_qty : 0);
+      const totalReceivedKg = totalReceivedQty; // User confirmed received_qty is in Kg
+      
+      const alreadyIndentedQty = indentedQtyMap[item.production_id] || 0;
+      
+      // Calculate remaining balance
+      // If we indented 50 out of 100 received, balance is 50.
+      const balanceQty = Math.max(0, totalReceivedQty - alreadyIndentedQty);
+      const balanceKg = totalReceivedQty > 0 ? (balanceQty / totalReceivedQty) * totalReceivedKg : 0;
+
+      return {
+        ...item,
+        actual_dispatch_qty: item.indent_quantity,
+        actual_dispatch_kg: item.total_weight_kg,
+        total_received_qty: totalReceivedQty,
+        total_received_kg: totalReceivedKg,
+        balance_qty: balanceQty,
+        balance_kg: balanceKg,
+        bom: skuNames.flatMap(n => bomByProduct[n] || []),
+        sku_boms: skuNames.map(skuName => ({ skuName, bom: bomByProduct[skuName] || [] }))
+      };
+    })
+    .filter(item => item.balance_qty > 0.01); // Filter out completed ones
 };
 
 /**
- * Get packing raw material indent history:
- * Items that are in packing_raw_material_indent, joined with production indent details and BOM items
+ * Get packing raw material indent history
  */
 const getPackingIndentHistory = async () => {
   const history = await prisma.packingRawMaterialIndent.findMany({
@@ -96,26 +116,8 @@ const getPackingIndentHistory = async () => {
     where: { production_id: { in: productionIds } }
   });
 
-  const dispatchPlans = await prisma.dispatchPlanningPlant.findMany({
-    where: { production_id: { in: productionIds } }
-  });
-
-  const allReceived = await prisma.oilReceipt.findMany({
-    where: { production_id: { in: productionIds } },
-    select: { production_id: true, received_qty: true }
-  });
-
   return history.map(h => {
     const indent = indents.find(i => i.production_id === h.production_id);
-    const dPlan = dispatchPlans.find(d => d.production_id === h.production_id);
-    const receipt = allReceived.find(r => r.production_id === h.production_id);
-    
-    if (indent) {
-      indent.actual_dispatch_qty = indent.indent_quantity;
-      indent.actual_dispatch_kg = indent.total_weight_kg;
-      indent.balance_qty = receipt ? receipt.received_qty : 0;
-    }
-    
     return { ...h, indentDetails: indent || null };
   });
 };
@@ -124,13 +126,14 @@ const getPackingIndentHistory = async () => {
  * Create packing raw material indent record
  */
 const createPackingIndent = async (data) => {
-  const { productionId, bomItems } = data;
+  const { productionId, bomItems, oilQty } = data;
   const fs = require('fs');
 
   try {
     const result = await prisma.packingRawMaterialIndent.create({
       data: {
         production_id: productionId,
+        oil_qty: Number(oilQty || 0),
         status: 'Allocated',
         bom_items: {
           create: bomItems.map(item => ({
@@ -148,7 +151,7 @@ const createPackingIndent = async (data) => {
 
     return result;
   } catch (error) {
-    fs.appendFileSync('backend_error.log', `Error at ${new Date().toISOString()}:\n${error.stack || error}\nData: ${JSON.stringify(data)}\n\n`);
+    fs.appendFileSync('backend_error.log', `Error creating packing indent: ${error.message}\n`);
     throw error;
   }
 };

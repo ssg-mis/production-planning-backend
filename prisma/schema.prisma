@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
 
@@ -16,9 +13,9 @@ model User {
   password      String
   email         String?  @unique
   phone_no      String?
-  role          String   @default("user")    // "admin" | "user"
-  status        String   @default("active")  // "active" | "inactive"
-  allowed_pages Json?    // Array of page IDs user can access
+  role          String   @default("user")
+  status        String   @default("active")
+  allowed_pages Json?
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 
@@ -26,21 +23,21 @@ model User {
 }
 
 model ProductionIndent {
-  id             Int      @id @default(autoincrement())
-  production_id  String   @unique
-  order_id       String?
-  product_name   String
-  packing_size   String?
-  packing_type   String?
-  party_name     String
-  oil_required   Decimal? @db.Decimal(10, 2)
-  selected_oil   String?
+  id              Int      @id @default(autoincrement())
+  production_id   String   @unique
+  order_id        String?
+  product_name    String
+  packing_size    String?
+  packing_type    String?
+  party_name      String
+  oil_required    Decimal? @db.Decimal(10, 2)
+  selected_oil    String?
   indent_quantity Decimal? @db.Decimal(10, 2)
+  tank_no         String?
+  status          String   @default("Submitted")
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
   total_weight_kg Decimal? @db.Decimal(10, 2)
-  tank_no        String?
-  status         String   @default("Submitted")
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
 
   @@map("production_indent")
 }
@@ -51,86 +48,89 @@ model Counter {
 }
 
 model IndentApproval {
-  id              Int      @id @default(autoincrement())
-  production_id   String   @unique // Link to ProductionIndent
-  approved_qty    Decimal  @db.Decimal(10, 2)
-  status          String   // 'Confirmed', 'Rejected'
-  remarks         String?
+  id                 Int      @id @default(autoincrement())
+  production_id      String   @unique
+  approved_qty       Decimal  @db.Decimal(10, 2)
+  status             String
+  remarks            String?
+  approval_date      DateTime @default(now())
   given_from_tank_no String?
-  approval_date   DateTime @default(now())
 
   @@map("indent_approval")
 }
 
 model LabConfirmation {
-  id                    Int      @id @default(autoincrement())
-  production_id         String   @unique
-  status                String   // 'Confirmed', 'Rejected'
+  id                    Int       @id @default(autoincrement())
+  production_id         String    @unique
+  status                String
   remarks               String?
-  lab_date              DateTime @default(now())
-  issued_quantity       Decimal? @db.Decimal(10, 2)
-  date_of_issue         DateTime?
-  issued_by             String?
-  qa_status             String?  // 'Pass', 'Fail', 'Pending'
+  lab_date              DateTime  @default(now())
   certificate_file      String?
   certificate_file_name String?
+  date_of_issue         DateTime?
+  issued_by             String?
+  issued_quantity       Decimal?  @db.Decimal(10, 2)
   lab_report_given_by   String?
+  qa_status             String?
   additives             Json?
 
   @@map("lab_confirmation")
 }
 
 model DispatchPlanningPlant {
-  id              Int      @id @default(autoincrement())
-  production_id   String   @unique
-  status          String   @default("Planned") // 'Planned', 'Dispatched'
+  id              Int       @id @default(autoincrement())
+  production_id   String    @unique
+  status          String    @default("Planned")
   remarks         String?
-  additives       Json?    // Store additive details as JSON array
-  actual_qty_kg   Decimal? @db.Decimal(10, 2)
-  planned_date    DateTime @default(now())
+  additives       Json?
+  planned_date    DateTime  @default(now())
   dispatched_date DateTime?
+  actual_qty_kg   Decimal?  @db.Decimal(10, 2)
 
   @@map("dispatch_planning_plant")
 }
 
 model OilReceipt {
-  id              Int      @id @default(autoincrement())
-  production_id   String   @unique
-  received_qty    Decimal  @db.Decimal(10, 2)
-  received_by     String
-  received_date   DateTime @default(now())
-  remarks         String?
-  status          String   @default("Received")
-  created_at      DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  production_id String   @unique
+  received_qty  Decimal  @db.Decimal(10, 2)
+  received_by   String
+  received_date DateTime @default(now())
+  remarks       String?
+  status        String   @default("Received")
+  created_at    DateTime @default(now())
 
   @@map("oil_receipt")
 }
 
 model PackingRawMaterialIndent {
-  id            Int      @id @default(autoincrement())
-  production_id String   @unique
-  status        String   @default("Allocated") // 'Allocated', 'Issued'
-  created_at    DateTime @default(now())
+  id            Int                     @id @default(autoincrement())
+  production_id String
+  status        String                  @default("Allocated")
+  created_at    DateTime                @default(now())
+  oil_qty       Decimal?                @db.Decimal(10, 2)
   bom_items     PackingRawMaterialBOM[]
 
   @@map("packing_raw_material_indent")
 }
 
 model PackingRawMaterialBOM {
-  id            Int      @id @default(autoincrement())
+  id            Int                      @id @default(autoincrement())
   indent_id     Int
+  item_name     String
+  qty_required  Decimal                  @db.Decimal(10, 2)
+  qty_allocated Decimal                  @db.Decimal(10, 2)
   production_id String
   indent        PackingRawMaterialIndent @relation(fields: [indent_id], references: [id])
-  item_name     String
-  qty_required  Decimal  @db.Decimal(10, 2)
-  qty_allocated Decimal  @db.Decimal(10, 2)
 
   @@map("packing_raw_material_bom")
 }
 
 model RawMaterialIssue {
   id            Int      @id @default(autoincrement())
-  production_id String   @unique
+  production_id String
+  indent_id     Int?     @unique
+  oil_qty       Decimal? @db.Decimal(10, 2)
   status        String   @default("Issued")
   issued_by     String?
   issued_date   DateTime @default(now())
@@ -141,7 +141,9 @@ model RawMaterialIssue {
 
 model RawMaterialReceipt {
   id            Int      @id @default(autoincrement())
-  production_id String   @unique
+  production_id String
+  issue_id      Int?     @unique
+  oil_qty       Decimal? @db.Decimal(10, 2)
   status        String   @default("Received")
   received_by   String?
   received_date DateTime @default(now())
@@ -151,40 +153,43 @@ model RawMaterialReceipt {
 }
 
 model ProductionEntry {
-  id            Int      @id @default(autoincrement())
-  production_id String   @unique
-  actual_qty    Decimal? @db.Decimal(10, 2)
-  status        String   @default("Completed")
-  processed_by  String?
-  processed_date DateTime @default(now())
-  remarks       String?
-  bom_consumption Json?    // Store detailed BOM consumption as JSON
+  id              Int      @id @default(autoincrement())
+  production_id   String
+  receipt_id      Int?
+  actual_qty      Decimal? @db.Decimal(10, 2)
+  oil_qty       Decimal? @db.Decimal(10, 2)
+  status          String   @default("Completed")
+  processed_by    String?
+  processed_date  DateTime @default(now())
+  remarks         String?
+  bom_consumption Json?
 
   @@map("production_entry")
 }
 
 model BalanceMaterialReceipt {
-  id              Int      @id @default(autoincrement())
-  production_id   String   @unique
-  received_by     String?
-  received_date   DateTime @default(now())
-  remarks         String?
-  status          String   @default("Received")
-  material_receipts Json?    // Store details of specific materials received
+  id                Int      @id @default(autoincrement())
+  production_id     String
+  entry_id          Int?
+  received_by       String?
+  received_date     DateTime @default(now())
+  remarks           String?
+  status            String   @default("Received")
+  material_receipts Json?
 
   @@map("balance_material_receipt")
 }
 
 model StockIn {
-  id              Int      @id @default(autoincrement())
-  production_id   String   @unique
-  finished_qty    Decimal? @db.Decimal(10, 2)
-  accepted_qty    Decimal? @db.Decimal(10, 2)
-  received_by     String?
-  received_date   DateTime @default(now())
-  remarks         String?
-  status          String   @default("Accepted")
+  id            Int      @id @default(autoincrement())
+  production_id String
+  entry_id      Int?
+  finished_qty  Decimal? @db.Decimal(10, 2)
+  accepted_qty  Decimal? @db.Decimal(10, 2)
+  received_by   String?
+  received_date DateTime @default(now())
+  remarks       String?
+  status        String   @default("Accepted")
 
   @@map("stock_in")
 }
-
