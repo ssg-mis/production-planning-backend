@@ -40,13 +40,24 @@ const getPendingDispatchPlant = async () => {
     }
   });
 
+  // 6. Fetch lab confirmation additives (chemical results from lab stage)
+  const labConfirmations = await prisma.labConfirmation.findMany({
+    where: { production_id: { in: pendingIds } },
+    select: {
+      production_id: true,
+      additives: true
+    }
+  });
+
   return indents.map(indent => {
     const approval = approvals.find(a => a.production_id === indent.production_id);
+    const lab = labConfirmations.find(l => l.production_id === indent.production_id);
     return {
       ...indent,
       approved_qty: approval ? approval.approved_qty : null,
       given_from_tank_no: approval ? approval.given_from_tank_no : null,
-      approval_date: approval ? approval.approval_date : null
+      approval_date: approval ? approval.approval_date : null,
+      lab_additives: lab ? lab.additives : null,
     };
   });
 };

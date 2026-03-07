@@ -17,3 +17,75 @@ Unique constraint failed on the fields: (`production_id`)
     at async /Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/routes/packingRawMaterialRoutes.js:30:20
 Data: {"productionId":"PD-073","bomItems":[]}
 
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:139:58
+
+  136 const fs = require('fs');
+  137 
+  138 try {
+→ 139   const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:139:58
+
+  136 const fs = require('fs');
+  137 
+  138 try {
+→ 139   const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:139:58
+
+  136 const fs = require('fs');
+  137 
+  138 try {
+→ 139   const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:144:58
+
+  141 
+  142 const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+  143 
+→ 144 const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:144:58
+
+  141 
+  142 const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+  143 
+→ 144 const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:144:58
+
+  141 
+  142 const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+  143 
+→ 144 const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:144:58
+
+  141 
+  142 const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+  143 
+→ 144 const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:144:58
+
+  141 
+  142 const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+  143 
+→ 144 const result = await prisma.packingRawMaterialIndent.create(
+Value out of range for the type: numeric field overflow

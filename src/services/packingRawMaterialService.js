@@ -59,6 +59,12 @@ const getPendingPackingIndents = async () => {
     orderBy: { created_at: 'desc' }
   });
 
+  // 3.5 Fetch given_from_tank_no from indentApproval
+  const approvals = await prisma.indentApproval.findMany({
+    where: { production_id: { in: receivedIds } },
+    select: { production_id: true, given_from_tank_no: true }
+  });
+
   // 4. Fetch BOM for unique SKUs
   const uniqueProductNames = [...new Set(indents.flatMap(i =>
     i.product_name.split(',').map(s => s.trim()).filter(Boolean)
@@ -73,20 +79,20 @@ const getPendingPackingIndents = async () => {
   return indents
     .map(item => {
       const receipt = allReceived.find(r => r.production_id === item.production_id);
+      const approval = approvals.find(a => a.production_id === item.production_id);
       const skuNames = item.product_name.split(',').map(s => s.trim()).filter(Boolean);
       
       const totalReceivedQty = Number(receipt ? receipt.received_qty : 0);
-      const totalReceivedKg = totalReceivedQty; // User confirmed received_qty is in Kg
+      const totalReceivedKg = totalReceivedQty;
       
       const alreadyIndentedQty = indentedQtyMap[item.production_id] || 0;
       
-      // Calculate remaining balance
-      // If we indented 50 out of 100 received, balance is 50.
       const balanceQty = Math.max(0, totalReceivedQty - alreadyIndentedQty);
       const balanceKg = totalReceivedQty > 0 ? (balanceQty / totalReceivedQty) * totalReceivedKg : 0;
 
       return {
         ...item,
+        given_from_tank_no: approval ? approval.given_from_tank_no : null,
         actual_dispatch_qty: item.indent_quantity,
         actual_dispatch_kg: item.total_weight_kg,
         total_received_qty: totalReceivedQty,
@@ -130,17 +136,22 @@ const createPackingIndent = async (data) => {
   const fs = require('fs');
 
   try {
+    // Round values to 2 decimal places to prevent Decimal(10,2) overflow
+    const roundedOilQty = Math.round((Number(oilQty || 0)) * 100) / 100;
+
+    const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+
     const result = await prisma.packingRawMaterialIndent.create({
       data: {
         production_id: productionId,
-        oil_qty: Number(oilQty || 0),
+        oil_qty: roundedOilQty,
         status: 'Allocated',
         bom_items: {
-          create: bomItems.map(item => ({
+          create: validBomItems.map(item => ({
             production_id: productionId,
             item_name: item.itemName,
-            qty_required: Number(item.qtyRequired),
-            qty_allocated: Number(item.qtyAllocated || item.qtyRequired)
+            qty_required: Math.round((Number(item.qtyRequired) || 0) * 100) / 100,
+            qty_allocated: Math.round((Number(item.qtyAllocated || item.qtyRequired) || 0) * 100) / 100,
           }))
         }
       },

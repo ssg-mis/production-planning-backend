@@ -118,8 +118,8 @@ model PackingRawMaterialBOM {
   id            Int                      @id @default(autoincrement())
   indent_id     Int
   item_name     String
-  qty_required  Decimal                  @db.Decimal(10, 2)
-  qty_allocated Decimal                  @db.Decimal(10, 2)
+  qty_required  Decimal                  @db.Decimal(15, 2)
+  qty_allocated Decimal                  @db.Decimal(15, 2)
   production_id String
   indent        PackingRawMaterialIndent @relation(fields: [indent_id], references: [id])
 

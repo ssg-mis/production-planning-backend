@@ -7,7 +7,7 @@ const { prisma } = require('../config/db');
 const getPendingOilReceipts = async () => {
   // 1. Get all planned items
   const alreadyPlanned = await prisma.dispatchPlanningPlant.findMany({
-    select: { production_id: true, actual_qty_kg: true }
+    select: { production_id: true, actual_qty_kg: true, additives: true }
   });
   const plannedIds = alreadyPlanned.map(d => d.production_id);
   if (plannedIds.length === 0) return [];
@@ -29,7 +29,6 @@ const getPendingOilReceipts = async () => {
   });
 
   // 4. Fetch production indent details for these IDs
-  // We join with production_indent to get product name, qty, etc.
   const indents = await prisma.productionIndent.findMany({
     where: { production_id: { in: pendingIds } },
     orderBy: { created_at: 'desc' }
@@ -42,7 +41,8 @@ const getPendingOilReceipts = async () => {
       ...indent,
       actual_qty_kg: planned && planned.actual_qty_kg !== null ? Number(planned.actual_qty_kg) : null,
       approved_qty: approval && approval.approved_qty !== null ? Number(approval.approved_qty) : null,
-      given_from_tank_no: approval ? approval.given_from_tank_no : null
+      given_from_tank_no: approval ? approval.given_from_tank_no : null,
+      dispatch_additives: planned ? planned.additives : null,
     };
   });
 };

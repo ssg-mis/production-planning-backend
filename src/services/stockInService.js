@@ -24,8 +24,13 @@ const getPendingStockIn = async () => {
 
     // 4. Calculate remaining quantity for each production entry
     const pending = productionEntries.map(entry => {
-        // Must have balance receipt first
-        if (!balanceEntryIds.includes(entry.id)) return null;
+        const bom = entry.bom_consumption || [];
+        const hasVariance = bom.some(item => (item.diff || 0) > 0 || (item.returned || 0) > 0 || (item.damaged || 0) > 0);
+
+        // Logic: 
+        // - If it has variance/returns, MUST have a balance receipt record first.
+        // - If it has NO variance, it can proceed to Stock In directly after Production Entry.
+        if (hasVariance && !balanceEntryIds.includes(entry.id)) return null;
 
         const matchingStockIn = allStockIn.filter(s => s.entry_id === entry.id);
         const totalStocked = matchingStockIn.reduce((acc, curr) => acc + Number(curr.accepted_qty || 0), 0);
