@@ -21,11 +21,12 @@ const createProductionIndent = async (req, res, next) => {
       selectedOil, 
       indentQuantity,
       tankNo,
-      totalWeightKg
+      totalWeightKg,
+      remarks
     } = req.body;
 
     // Log the request body for debugging
-    console.log('Received production indent data:', { orderId, productName, partyName, totalWeightKg });
+    console.log('Received production indent data:', { orderId, productName, partyName, totalWeightKg, remarks });
 
     // Validate required fields
     if (!productName || !partyName) {
@@ -48,7 +49,8 @@ const createProductionIndent = async (req, res, next) => {
       selectedOil,
       indentQuantity,
       tankNo,
-      totalWeightKg
+      totalWeightKg,
+      remarks
     });
 
     res.status(201).json({

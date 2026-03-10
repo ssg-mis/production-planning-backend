@@ -56,15 +56,16 @@ const createProductionIndent = async (data) => {
       packing_size: data.packingSize || null,
       packing_type: data.packingType || null,
       party_name: data.partyName,
-      oil_required: data.oilRequired,
+      oil_required: data.oilRequired ? parseFloat(Number(data.oilRequired).toFixed(2)) : null,
       selected_oil: data.selectedOil || null,
-      indent_quantity: data.indentQuantity,
-      // Ensure it's a valid number, default to null if NaN or undefined
+      indent_quantity: data.indentQuantity ? parseFloat(Number(data.indentQuantity).toFixed(2)) : null,
+      // Ensure it's a valid number, rounded to 2 decimal places
       total_weight_kg: (data.totalWeightKg !== undefined && data.totalWeightKg !== null && !isNaN(data.totalWeightKg)) 
-        ? data.totalWeightKg 
+        ? parseFloat(Number(data.totalWeightKg).toFixed(2)) 
         : null,
       tank_no: data.tankNo || null,
-      status: data.status || 'Submitted'
+      status: data.status || 'Submitted',
+      remarks: data.remarks || null
     }
   });
 
@@ -108,6 +109,7 @@ const transformIndentData = (records) => {
     totalWeightKg: record.total_weight_kg ? parseFloat(record.total_weight_kg) : 0,
     tankNo: record.tank_no,
     status: record.status,
+    remarks: record.remarks,
     createdAt: record.created_at,
     updatedAt: record.updated_at
   }));

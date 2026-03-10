@@ -38,6 +38,7 @@ model ProductionIndent {
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
   total_weight_kg Decimal? @db.Decimal(10, 2)
+  remarks         String?  @db.Text
 
   @@map("production_indent")
 }

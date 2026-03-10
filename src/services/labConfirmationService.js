@@ -77,6 +77,14 @@ const getLabHistory = async () => {
 const createLabConfirmation = async (data) => {
   const { productionId, status, remarks, testParams } = data;
 
+  if (status === 'Rejected') {
+    // Rollback: Delete from IndentApproval so it reappears in Indent Approval pending list
+    await prisma.indentApproval.deleteMany({
+      where: { production_id: productionId }
+    });
+    return { status: 'Rejected', rolledBack: true };
+  }
+
   const result = await prisma.labConfirmation.create({
     data: {
       production_id:         productionId,

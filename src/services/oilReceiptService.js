@@ -34,15 +34,23 @@ const getPendingOilReceipts = async () => {
     orderBy: { created_at: 'desc' }
   });
 
+  // 5. Fetch lab confirmations for additives
+  const labs = await prisma.labConfirmation.findMany({
+    where: { production_id: { in: pendingIds } },
+    select: { production_id: true, additives: true }
+  });
+
   return indents.map(indent => {
     const planned = alreadyPlanned.find(p => p.production_id === indent.production_id);
     const approval = approvals.find(a => a.production_id === indent.production_id);
+    const lab = labs.find(l => l.production_id === indent.production_id);
     return {
       ...indent,
       actual_qty_kg: planned && planned.actual_qty_kg !== null ? Number(planned.actual_qty_kg) : null,
       approved_qty: approval && approval.approved_qty !== null ? Number(approval.approved_qty) : null,
       given_from_tank_no: approval ? approval.given_from_tank_no : null,
       dispatch_additives: planned ? planned.additives : null,
+      lab_additives: lab ? lab.additives : null,
     };
   });
 };
@@ -71,17 +79,25 @@ const getOilReceiptHistory = async () => {
     select: { production_id: true, approved_qty: true, given_from_tank_no: true }
   });
 
+  const labs = await prisma.labConfirmation.findMany({
+    where: { production_id: { in: productionIds } },
+    select: { production_id: true, additives: true }
+  });
+
   return history.map(h => {
     const indent = indents.find(i => i.production_id === h.production_id);
     const plan = planned.find(p => p.production_id === h.production_id);
     const approval = approvals.find(a => a.production_id === h.production_id);
+    const lab = labs.find(l => l.production_id === h.production_id);
     return { 
       ...h, 
       indentDetails: indent ? {
         ...indent,
         actual_qty_kg: plan && plan.actual_qty_kg !== null ? Number(plan.actual_qty_kg) : null,
         approved_qty: approval && approval.approved_qty !== null ? Number(approval.approved_qty) : null,
-        given_from_tank_no: approval ? approval.given_from_tank_no : null
+        given_from_tank_no: approval ? approval.given_from_tank_no : null,
+        dispatch_additives: plan ? plan.additives : null,
+        lab_additives: lab ? lab.additives : null,
       } : null 
     };
   });
