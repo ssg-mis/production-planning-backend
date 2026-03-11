@@ -107,9 +107,19 @@ const getPendingProductionEntries = async () => {
  * Get production entry history
  */
 const getProductionEntryHistory = async () => {
-    const history = await prisma.productionEntry.findMany({
-        orderBy: { processed_date: 'desc' }
-    });
+    let history = [];
+    try {
+        history = await prisma.productionEntry.findMany({
+            orderBy: { processed_date: 'desc' }
+        });
+    } catch (err) {
+        console.error('Error fetching production entry history:', err.message);
+        try {
+            history = await prisma.$queryRawUnsafe(`SELECT * FROM production_entry ORDER BY processed_date DESC`);
+        } catch (rawErr) {
+            console.error('Raw fallback for production entry history failed:', rawErr.message);
+        }
+    }
 
     const productionIds = history.map(h => h.production_id);
     const receiptIds = history.map(h => h.receipt_id).filter(Boolean);
@@ -118,13 +128,39 @@ const getProductionEntryHistory = async () => {
         where: { production_id: { in: productionIds } }
     });
 
-    const receipts = await prisma.rawMaterialReceipt.findMany({
-        where: { id: { in: receiptIds } }
-    });
+    let receipts = [];
+    try {
+        receipts = await prisma.rawMaterialReceipt.findMany({
+            where: { id: { in: receiptIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching receipts for production history:', err.message);
+        try {
+            if (receiptIds.length > 0) {
+                receipts = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_receipt WHERE id IN (${receiptIds.join(',')})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for receipts history failed:', rawErr.message);
+        }
+    }
  
-    const issues = await prisma.rawMaterialIssue.findMany({
-        where: { id: { in: receipts.map(r => r.issue_id).filter(Boolean) } }
-    });
+    let issues = [];
+    try {
+        const issueIds = (receipts || []).map(r => r.issue_id).filter(Boolean);
+        issues = await prisma.rawMaterialIssue.findMany({
+            where: { id: { in: issueIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching issues for production history:', err.message);
+        try {
+            const issueIds = (receipts || []).map(r => r.issue_id).filter(Boolean);
+            if (issueIds.length > 0) {
+                issues = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE id IN (${issueIds.join(',')})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for issues history failed:', rawErr.message);
+        }
+    }
 
     const approvals = await prisma.indentApproval.findMany({
         where: { production_id: { in: productionIds } }

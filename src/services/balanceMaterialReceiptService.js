@@ -67,14 +67,36 @@ const getPendingBalanceReceipts = async () => {
  * Get balance material receipt history
  */
 const getBalanceReceiptHistory = async () => {
-    const history = await prisma.balanceMaterialReceipt.findMany({
-        orderBy: { received_date: 'desc' }
-    });
+    let history = [];
+    try {
+        history = await prisma.balanceMaterialReceipt.findMany({
+            orderBy: { received_date: 'desc' }
+        });
+    } catch (err) {
+        console.error('Error fetching balance receipt history:', err.message);
+        try {
+            history = await prisma.$queryRawUnsafe(`SELECT * FROM balance_material_receipt ORDER BY received_date DESC`);
+        } catch (rawErr) {
+            console.error('Raw fallback for balance history failed:', rawErr.message);
+        }
+    }
 
     const entryIds = history.map(h => h.entry_id).filter(Boolean);
-    const productionEntries = await prisma.productionEntry.findMany({
-        where: { id: { in: entryIds } }
-    });
+    let productionEntries = [];
+    try {
+        productionEntries = await prisma.productionEntry.findMany({
+            where: { id: { in: entryIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching entries for balance history:', err.message);
+        try {
+            if (entryIds.length > 0) {
+                productionEntries = await prisma.$queryRawUnsafe(`SELECT * FROM production_entry WHERE id IN (${entryIds.join(',')})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for entries in balance history failed:', rawErr.message);
+        }
+    }
 
     const productionIds = history.map(h => h.production_id);
     const indents = await prisma.productionIndent.findMany({

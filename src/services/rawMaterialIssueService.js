@@ -27,10 +27,20 @@ const getPendingRawMaterialIssues = async () => {
     if (allPackingIndents.length === 0) return [];
 
     // 2. Get already issued indent IDs
-    const alreadyIssued = await prisma.rawMaterialIssue.findMany({
-        select: { indent_id: true }
-    });
-    const issuedIndentIds = alreadyIssued.map(i => i.indent_id).filter(Boolean);
+    let alreadyIssued = [];
+    try {
+        alreadyIssued = await prisma.rawMaterialIssue.findMany({
+            select: { indent_id: true }
+        });
+    } catch (err) {
+        console.error('Error fetching already issued indents (missing columns?):', err.message);
+        try {
+            alreadyIssued = await prisma.$queryRawUnsafe(`SELECT indent_id FROM raw_material_issue`);
+        } catch (rawErr) {
+            console.error('Raw fallback for issued indents failed:', rawErr.message);
+        }
+    }
+    const issuedIndentIds = (alreadyIssued || []).map(i => i.indent_id).filter(Boolean);
 
     // 3. Pending indents = those not yet issued
     const pendingPackingIndents = allPackingIndents.filter(p => !issuedIndentIds.includes(p.id));
@@ -62,9 +72,19 @@ const getPendingRawMaterialIssues = async () => {
  * Get raw material issue history
  */
 const getRawMaterialIssueHistory = async () => {
-    const history = await prisma.rawMaterialIssue.findMany({
-        orderBy: { issued_date: 'desc' }
-    });
+    let history = [];
+    try {
+        history = await prisma.rawMaterialIssue.findMany({
+            orderBy: { issued_date: 'desc' }
+        });
+    } catch (err) {
+        console.error('Error fetching raw material issue history:', err.message);
+        try {
+            history = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue ORDER BY issued_date DESC`);
+        } catch (rawErr) {
+            console.error('Raw fallback for history failed:', rawErr.message);
+        }
+    }
 
     const productionIds = history.map(h => h.production_id);
     const indentIds = history.map(h => h.indent_id).filter(Boolean);

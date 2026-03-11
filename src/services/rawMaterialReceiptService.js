@@ -90,9 +90,19 @@ const getPendingRawMaterialReceipts = async () => {
  * Get raw material receipt history
  */
 const getRawMaterialReceiptHistory = async () => {
-    const history = await prisma.rawMaterialReceipt.findMany({
-        orderBy: { received_date: 'desc' }
-    });
+    let history = [];
+    try {
+        history = await prisma.rawMaterialReceipt.findMany({
+            orderBy: { received_date: 'desc' }
+        });
+    } catch (err) {
+        console.error('Error fetching raw material receipt history:', err.message);
+        try {
+            history = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_receipt ORDER BY received_date DESC`);
+        } catch (rawErr) {
+            console.error('Raw fallback for receipt history failed:', rawErr.message);
+        }
+    }
 
     const productionIds = history.map(h => h.production_id);
     const issueIds = history.map(h => h.issue_id).filter(Boolean);
@@ -101,9 +111,21 @@ const getRawMaterialReceiptHistory = async () => {
         where: { production_id: { in: productionIds } }
     });
 
-    const issues = await prisma.rawMaterialIssue.findMany({
-        where: { id: { in: issueIds } }
-    });
+    let issues = [];
+    try {
+        issues = await prisma.rawMaterialIssue.findMany({
+            where: { id: { in: issueIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching issues for receipt history:', err.message);
+        try {
+            if (issueIds.length > 0) {
+                issues = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE id IN (${issueIds.join(',')})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for issues history failed:', rawErr.message);
+        }
+    }
 
     const approvals = await prisma.indentApproval.findMany({
         where: { production_id: { in: productionIds } }
