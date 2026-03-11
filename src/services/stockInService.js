@@ -38,9 +38,19 @@ const getPendingStockIn = async () => {
     const balanceEntryIds = (balanceReceipts || []).map(r => r.entry_id).filter(Boolean);
 
     // 3. Get all stock_in records to calculate remaining quantities
-    const allStockIn = await prisma.stockIn.findMany({
-        select: { entry_id: true, accepted_qty: true }
-    });
+    let allStockIn = [];
+    try {
+        allStockIn = await prisma.stockIn.findMany({
+            select: { entry_id: true, accepted_qty: true }
+        });
+    } catch (err) {
+        console.error('Error fetching all stock-in for pending calculation:', err.message);
+        try {
+            allStockIn = await prisma.$queryRawUnsafe(`SELECT entry_id, accepted_qty FROM stock_in`);
+        } catch (rawErr) {
+            console.error('Raw fallback for all stock-in failed:', rawErr.message);
+        }
+    }
 
     // 4. Calculate remaining quantity for each production entry
     const pending = productionEntries.map(entry => {
@@ -65,18 +75,31 @@ const getPendingStockIn = async () => {
     if (pending.length === 0) return [];
 
     const productionIds = [...new Set(pending.map(p => p.production_id))];
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    let indents = [];
+    try {
+        indents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching production indents for stock-in:', err.message);
+        try {
+            const idList = productionIds.map(id => `'${id}'`).join(',');
+            indents = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id IN (${idList})`);
+        } catch (rawErr) {
+            console.error('Raw fallback for production indents failed:', rawErr.message);
+        }
+    }
 
-    // Fetch packing indents for selected_skus using raw SQL safely
-    let packingIndents = [];
-    if (productionIds.length > 0) {
-        packingIndents = await prisma.$queryRawUnsafe(`
-            SELECT production_id, selected_skus 
-            FROM packing_raw_material_indent 
-            WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
-        `);
+    try {
+        if (productionIds.length > 0) {
+            packingIndents = await prisma.$queryRawUnsafe(`
+                SELECT production_id, selected_skus 
+                FROM packing_raw_material_indent 
+                WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
+            `);
+        }
+    } catch (err) {
+        console.error('Error fetching packing indents via raw SQL:', err.message);
     }
 
     return pending.map(entry => {
@@ -99,28 +122,66 @@ const getPendingStockIn = async () => {
  * Get stock in history
  */
 const getStockInHistory = async () => {
-    const history = await prisma.stockIn.findMany({
-        orderBy: { received_date: 'desc' }
-    });
+    let history = [];
+    try {
+        history = await prisma.stockIn.findMany({
+            orderBy: { received_date: 'desc' }
+        });
+    } catch (err) {
+        console.error('Error fetching stock-in history:', err.message);
+        try {
+            history = await prisma.$queryRawUnsafe(`SELECT * FROM stock_in ORDER BY received_date DESC`);
+        } catch (rawErr) {
+            console.error('Raw fallback for stock-in history failed:', rawErr.message);
+        }
+    }
 
-    const entryIds = history.map(h => h.entry_id).filter(Boolean);
-    const productionEntries = await prisma.productionEntry.findMany({
-        where: { id: { in: entryIds } }
-    });
+    const entryIds = (history || []).map(h => h.entry_id).filter(Boolean);
+    let productionEntries = [];
+    try {
+        productionEntries = await prisma.productionEntry.findMany({
+            where: { id: { in: entryIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching production entries for history:', err.message);
+        if (entryIds.length > 0) {
+            try {
+                const idList = entryIds.join(',');
+                productionEntries = await prisma.$queryRawUnsafe(`SELECT * FROM production_entry WHERE id IN (${idList})`);
+            } catch (rawErr) {
+                console.error('Raw fallback for production entries history failed:', rawErr.message);
+            }
+        }
+    }
 
-    const productionIds = [...new Set(history.map(h => h.production_id))];
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    const productionIds = [...new Set((history || []).map(h => h.production_id))];
+    let indents = [];
+    try {
+        indents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching production indents for history:', err.message);
+        if (productionIds.length > 0) {
+            try {
+                const idList = productionIds.map(id => `'${id}'`).join(',');
+                indents = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id IN (${idList})`);
+            } catch (rawErr) {
+                console.error('Raw fallback for production indents history failed:', rawErr.message);
+            }
+        }
+    }
 
-    // Fetch packing indents for selected_skus using raw SQL safely
-    let packingIndents = [];
-    if (productionIds.length > 0) {
-        packingIndents = await prisma.$queryRawUnsafe(`
-            SELECT production_id, selected_skus 
-            FROM packing_raw_material_indent 
-            WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
-        `);
+    try {
+        if (productionIds.length > 0) {
+            packingIndents = await prisma.$queryRawUnsafe(`
+                SELECT production_id, selected_skus 
+                FROM packing_raw_material_indent 
+                WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
+            `);
+        }
+    } catch (err) {
+        console.error('Error fetching packing indents for history via raw SQL:', err.message);
     }
 
     return history.map(h => {
