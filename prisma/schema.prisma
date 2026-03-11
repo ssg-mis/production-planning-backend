@@ -46,6 +46,8 @@ model ProductionIndent {
 model Counter {
   name  String @id
   value Int
+
+  @@map("counter")
 }
 
 model IndentApproval {
