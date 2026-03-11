@@ -76,6 +76,7 @@ const getRawMaterialIssueHistory = async () => {
     let packingIndents = [];
     if (indentIds.length > 0) {
         try {
+            const idList = indentIds.join(',');
             packingIndents = await prisma.$queryRawUnsafe(`
                 SELECT id, production_id, status, created_at, oil_qty, selected_skus 
                 FROM packing_raw_material_indent

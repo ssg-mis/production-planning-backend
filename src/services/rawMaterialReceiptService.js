@@ -6,9 +6,20 @@ const { prisma } = require('../config/db');
  */
 const getPendingRawMaterialReceipts = async () => {
     // 1. Get all issued items
-    const allIssued = await prisma.rawMaterialIssue.findMany({
-        where: { status: 'Issued' }
-    });
+    let allIssued = [];
+    try {
+        allIssued = await prisma.rawMaterialIssue.findMany({
+            where: { status: 'Issued' }
+        });
+    } catch (err) {
+        console.error('Error fetching issued items (missing columns?):', err.message);
+        // Try raw fallback
+        try {
+            allIssued = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE status = 'Issued'`);
+        } catch (rawErr) {
+            console.error('Raw fallback for issues failed:', rawErr.message);
+        }
+    }
     if (allIssued.length === 0) return [];
 
     // 2. Get items already in raw_material_receipt

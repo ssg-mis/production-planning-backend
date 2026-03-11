@@ -12,9 +12,19 @@ const getPendingProductionEntries = async () => {
     if (allReceived.length === 0) return [];
 
     // 2. Get all production entries to calculate processed quantities
-    const allProduced = await prisma.productionEntry.findMany({
-        select: { receipt_id: true, actual_qty: true, oil_qty: true }
-    });
+    let allProduced = [];
+    try {
+        allProduced = await prisma.productionEntry.findMany({
+            select: { receipt_id: true, actual_qty: true, oil_qty: true }
+        });
+    } catch (err) {
+        console.error('Error fetching production entries (missing oil_qty?):', err.message);
+        try {
+            allProduced = await prisma.$queryRawUnsafe(`SELECT receipt_id, actual_qty, oil_qty FROM production_entry`);
+        } catch (rawErr) {
+            console.error('Raw fallback for entries failed:', rawErr.message);
+        }
+    }
 
     // 3. Calculate remaining quantity for each receipt
     const pendingReceipts = allReceived.map(receipt => {

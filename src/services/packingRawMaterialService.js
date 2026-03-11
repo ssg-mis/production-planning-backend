@@ -74,16 +74,36 @@ const getPendingPackingIndents = async () => {
   const receivedIds = allReceived.map(r => r.production_id);
 
   // 2. Get sum of already indented quantities per production_id
-  const indentedSums = await prisma.packingRawMaterialIndent.groupBy({
-    by: ['production_id'],
-    _sum: {
-      oil_qty: true
+  let indentedSums = [];
+  try {
+    indentedSums = await prisma.packingRawMaterialIndent.groupBy({
+      by: ['production_id'],
+      _sum: {
+        oil_qty: true
+      }
+    });
+  } catch (err) {
+    console.error('Error grouping indents (missing oil_qty?):', err.message);
+    // Try raw SQL as fallback
+    try {
+        indentedSums = await prisma.$queryRawUnsafe(`
+            SELECT production_id, SUM(oil_qty) as "_sum_oil_qty" 
+            FROM packing_raw_material_indent 
+            GROUP BY production_id
+        `);
+        // Map raw SQL format to Prisma format
+        indentedSums = indentedSums.map(s => ({
+            production_id: s.production_id,
+            _sum: { oil_qty: s._sum_oil_qty }
+        }));
+    } catch (rawErr) {
+        console.error('Raw fallback failed too:', rawErr.message);
     }
-  });
+  }
 
   const indentedQtyMap = {};
   indentedSums.forEach(group => {
-    indentedQtyMap[group.production_id] = Number(group._sum.oil_qty || 0);
+    indentedQtyMap[group.production_id] = Number(group._sum?.oil_qty || 0);
   });
 
   // 3. Fetch production indent details for received IDs
@@ -143,22 +163,35 @@ const getPendingPackingIndents = async () => {
  * Get packing raw material indent history
  */
 const getPackingIndentHistory = async () => {
-  const history = await prisma.packingRawMaterialIndent.findMany({
-    include: {
-      bom_items: true
-    },
-    orderBy: { created_at: 'desc' }
-  });
+  try {
+    const history = await prisma.$queryRawUnsafe(`
+      SELECT * FROM packing_raw_material_indent ORDER BY created_at DESC
+    `);
 
-  const productionIds = history.map(h => h.production_id);
-  const indents = await prisma.productionIndent.findMany({
-    where: { production_id: { in: productionIds } }
-  });
+    const productionIds = (history || []).map(h => h.production_id);
+    const indents = await prisma.productionIndent.findMany({
+      where: { production_id: { in: productionIds } }
+    });
 
-  return history.map(h => {
-    const indent = indents.find(i => i.production_id === h.production_id);
-    return { ...h, indentDetails: indent || null };
-  });
+    // Fetch BOM items via Prisma (this table is stable)
+    const bomItems = await prisma.packingRawMaterialBOM.findMany({
+      where: { production_id: { in: productionIds } }
+    });
+
+    return (history || []).map(h => {
+      const indent = indents.find(i => i.production_id === h.production_id);
+      const items = bomItems.filter(b => b.production_id === h.production_id);
+      return { 
+        ...h, 
+        indentDetails: indent || null,
+        bom_items: items,
+        selected_skus: h.selected_skus || []
+      };
+    });
+  } catch (err) {
+    console.error('Error fetching packing indent history:', err.message);
+    return [];
+  }
 };
 
 /**

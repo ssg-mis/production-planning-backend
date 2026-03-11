@@ -17,14 +17,33 @@ router.get('/pending', async (req, res) => {
 router.get('/fix-db', async (req, res) => {
   try {
     const { prisma } = require('../config/db');
-    // Ensure selected_skus exists on packing_raw_material_indent
-    await prisma.$executeRawUnsafe(`ALTER TABLE packing_raw_material_indent ADD COLUMN IF NOT EXISTS selected_skus JSONB DEFAULT '[]';`);
-    // Ensure bom_consumption exists on production_entry
-    await prisma.$executeRawUnsafe(`ALTER TABLE production_entry ADD COLUMN IF NOT EXISTS bom_consumption JSONB DEFAULT '[]';`);
     
+    console.log('[FixDB] Starting database schema strengthening...');
+
+    // 1. packing_raw_material_indent
+    await prisma.$executeRawUnsafe(`ALTER TABLE packing_raw_material_indent ADD COLUMN IF NOT EXISTS selected_skus JSONB DEFAULT '[]';`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE packing_raw_material_indent ADD COLUMN IF NOT EXISTS oil_qty DECIMAL(10,2);`);
+
+    // 2. production_entry
+    await prisma.$executeRawUnsafe(`ALTER TABLE production_entry ADD COLUMN IF NOT EXISTS bom_consumption JSONB DEFAULT '[]';`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE production_entry ADD COLUMN IF NOT EXISTS oil_qty DECIMAL(10,2);`);
+    
+    // 3. raw_material_issue
+    await prisma.$executeRawUnsafe(`ALTER TABLE raw_material_issue ADD COLUMN IF NOT EXISTS oil_qty DECIMAL(10,2);`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE raw_material_issue ADD COLUMN IF NOT EXISTS indent_id INTEGER;`);
+
+    // 4. raw_material_receipt
+    await prisma.$executeRawUnsafe(`ALTER TABLE raw_material_receipt ADD COLUMN IF NOT EXISTS oil_qty DECIMAL(10,2);`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE raw_material_receipt ADD COLUMN IF NOT EXISTS issue_id INTEGER;`);
+
+    // 5. balance_material_receipt
+    await prisma.$executeRawUnsafe(`ALTER TABLE balance_material_receipt ADD COLUMN IF NOT EXISTS material_receipts JSONB DEFAULT '[]';`);
+    
+    console.log('[FixDB] Database schema strengthened successfully.');
+
     res.json({ 
       status: 'success', 
-      message: 'Database schema strengthened successfully. Columns added if they were missing.' 
+      message: 'Database schema strengthened successfully. All missing columns for Packing, Issue, Receipt, and Production Entry have been added if they were missing.' 
     });
   } catch (error) {
     console.error('Error fixing DB:', error);

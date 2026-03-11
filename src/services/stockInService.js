@@ -6,9 +6,19 @@ const { prisma } = require('../config/db');
  */
 const getPendingStockIn = async () => {
     // 1. Get all production entries
-    const productionEntries = await prisma.productionEntry.findMany({
-        orderBy: { processed_date: 'desc' }
-    });
+    let productionEntries = [];
+    try {
+        productionEntries = await prisma.productionEntry.findMany({
+            orderBy: { processed_date: 'desc' }
+        });
+    } catch (err) {
+        console.error('Error fetching production entries for stock-in:', err.message);
+        try {
+            productionEntries = await prisma.$queryRawUnsafe(`SELECT * FROM production_entry ORDER BY processed_date DESC`);
+        } catch (rawErr) {
+            console.error('Raw fallback for stock-in production entries failed:', rawErr.message);
+        }
+    }
     if (productionEntries.length === 0) return [];
 
     // 2. Get all balance receipts (dependency)
