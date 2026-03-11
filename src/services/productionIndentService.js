@@ -20,7 +20,7 @@ const getNextProductionId = async () => {
     });
     return `PD-${String(counter.value).padStart(3, '0')}`;
   } catch (error) {
-    console.error('Prisma counter failed, trying raw SQL fallback:', error.message);
+    console.warn('Prisma counter failed or conflict, trying raw SQL fallback:', error.message);
     try {
       // 2. Raw SQL fallback for counter
       await prisma.$executeRawUnsafe(`
@@ -28,12 +28,27 @@ const getNextProductionId = async () => {
         ON CONFLICT (name) DO UPDATE SET value = counter.value + 1
       `);
       const rawCounter = await prisma.$queryRawUnsafe(`SELECT value FROM counter WHERE name = 'production_indent'`);
-      const value = rawCounter[0]?.value || 1;
-      return `PD-${String(value).padStart(3, '0')}`;
+      const value = (rawCounter && rawCounter[0]) ? Number(rawCounter[0].value) : null;
+      
+      if (value) {
+        // Double check against max existing ID to prevent unique constraint violation
+        const maxIdResult = await prisma.$queryRawUnsafe(`SELECT production_id FROM production_indent WHERE production_id LIKE 'PD-%' ORDER BY id DESC LIMIT 1`);
+        if (maxIdResult && maxIdResult[0]) {
+          const lastNum = parseInt(maxIdResult[0].production_id.split('-')[1]);
+          if (!isNaN(lastNum) && lastNum >= value) {
+            const nextValue = lastNum + 1;
+            // Sync counter back
+            await prisma.$executeRawUnsafe(`UPDATE counter SET value = ${nextValue} WHERE name = 'production_indent'`);
+            return `PD-${String(nextValue).padStart(3, '0')}`;
+          }
+        }
+        return `PD-${String(value).padStart(3, '0')}`;
+      }
+      throw new Error('Raw counter fetch returned no results');
     } catch (rawError) {
-      console.error('CRITICAL: Raw SQL fallback for counter failed:', rawError.message);
-      // 3. Last resort - use timestamp to avoid blocking
-      const timestamp = Date.now().toString().slice(-3);
+      console.error('CRITICAL: Raw SQL fallback for counter failed, using timestamp:', rawError.message);
+      // 3. Last resort - use timestamp and random digits to ensure string uniqueness
+      const timestamp = Date.now().toString().slice(-6);
       return `PD-EXT-${timestamp}`;
     }
   }
@@ -59,9 +74,9 @@ const createProductionIndent = async (data) => {
     packing_size: data.packingSize || null,
     packing_type: data.packingType || null,
     party_name: data.partyName,
-    oil_required: data.oilRequired ? parseFloat(Number(data.oilRequired).toFixed(2)) : null,
+    oil_required: (data.oilRequired !== undefined && data.oilRequired !== null) ? parseFloat(Number(data.oilRequired).toFixed(2)) : null,
     selected_oil: data.selectedOil || null,
-    indent_quantity: data.indentQuantity ? parseFloat(Number(data.indentQuantity).toFixed(2)) : null,
+    indent_quantity: (data.indentQuantity !== undefined && data.indentQuantity !== null) ? parseFloat(Number(data.indentQuantity).toFixed(2)) : null,
     total_weight_kg: (data.totalWeightKg !== undefined && data.totalWeightKg !== null && !isNaN(data.totalWeightKg)) 
       ? parseFloat(Number(data.totalWeightKg).toFixed(2)) 
       : null,
@@ -72,21 +87,28 @@ const createProductionIndent = async (data) => {
 
   try {
     // 1. Try Prisma first
-    return await prisma.productionIndent.create({
+    const result = await prisma.productionIndent.create({
       data: indentData
     });
+    return serializeData(result);
   } catch (error) {
-    console.error('Prisma createProductionIndent failed, trying raw SQL fallback:', error.message);
+    console.error(`Prisma createProductionIndent failed for ${productionId}, trying raw SQL fallback:`, error.message);
     try {
       // 2. Raw SQL fallback
-      const columns = Object.keys(indentData).join(', ');
-      const values = Object.values(indentData).map(val => val === null ? 'NULL' : (typeof val === 'string' ? `'${val.replace(/'/g, "''")}'` : val)).join(', ');
+      const keys = Object.keys(indentData);
+      const columns = keys.join(', ');
+      const values = keys.map(key => {
+        const val = indentData[key];
+        if (val === null) return 'NULL';
+        if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+        return val;
+      }).join(', ');
       
       await prisma.$executeRawUnsafe(`INSERT INTO production_indent (${columns}) VALUES (${values})`);
       
       // Fetch the created record
       const result = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id = '${productionId}'`);
-      return result[0];
+      return serializeData(result[0]);
     } catch (rawError) {
       console.error('CRITICAL: Raw SQL fallback for createProductionIndent failed:', rawError.message);
       throw new Error(`Failed to create production indent even with fallback: ${rawError.message}`);

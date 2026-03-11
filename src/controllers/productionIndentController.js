@@ -60,18 +60,15 @@ const createProductionIndent = async (req, res, next) => {
     });
   } catch (error) {
     console.error('CRITICAL ERROR in createProductionIndent controller:', error);
-    // Print full stack trace
     if (error.stack) console.error(error.stack);
     
-    if (error.message === 'Database connection not available') {
-      return res.status(503).json({
-        success: false,
-        error: 'Service Unavailable',
-        message: 'Database connection is not available'
-      });
-    }
-    
-    next(error);
+    // Return more detailed error for production debugging
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+    });
   }
 };
 
