@@ -6,6 +6,10 @@ const { prisma, dispatchPrisma } = require('../config/db');
  */
 const getBOMForProduct = async (productName) => {
   try {
+    if (!dispatchPrisma) {
+      console.warn('Dispatch database connection not available. Skipping BOM fetch.');
+      return [];
+    }
     const result = await dispatchPrisma.$queryRawUnsafe(
       `SELECT rmname, rmqty, rmunit, mainqty, mainuom FROM bom WHERE LOWER(TRIM(skuname)) = LOWER(TRIM($1)) ORDER BY id`,
       productName
@@ -37,6 +41,10 @@ const getSKUsByOilType = async (oilType) => {
     
     if (!keyword) return [];
 
+    if (!dispatchPrisma) {
+      console.warn('Dispatch database connection not available. Skipping SKU fetch.');
+      return [];
+    }
     const result = await dispatchPrisma.$queryRawUnsafe(
       `SELECT DISTINCT sku_name FROM sku_details WHERE sku_name ILIKE $1 AND status = 'Active' ORDER BY sku_name`,
       `%${keyword}%`
@@ -92,7 +100,7 @@ const getPendingPackingIndents = async () => {
 
   // 4. Fetch BOM for unique SKUs
   const uniqueProductNames = [...new Set(indents.flatMap(i =>
-    i.product_name.split(',').map(s => s.trim()).filter(Boolean)
+    (i.product_name || '').split(',').map(s => s.trim()).filter(Boolean)
   ))];
   const bomByProduct = {};
   await Promise.all(uniqueProductNames.map(async (name) => {
@@ -105,7 +113,7 @@ const getPendingPackingIndents = async () => {
     .map(item => {
       const receipt = allReceived.find(r => r.production_id === item.production_id);
       const approval = approvals.find(a => a.production_id === item.production_id);
-      const skuNames = item.product_name.split(',').map(s => s.trim()).filter(Boolean);
+      const skuNames = (item.product_name || '').split(',').map(s => s.trim()).filter(Boolean);
       
       const totalReceivedQty = Number(receipt ? receipt.received_qty : 0);
       const totalReceivedKg = totalReceivedQty;

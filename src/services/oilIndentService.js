@@ -61,7 +61,12 @@ const getPendingIndents = async () => {
   
   query += ` ORDER BY planned_1 DESC`;
 
-  const pendingIndents = await dispatchPrisma.$queryRawUnsafe(query);
+  let pendingIndents = [];
+  try {
+    pendingIndents = await dispatchPrisma.$queryRawUnsafe(query);
+  } catch (err) {
+    console.error('Error fetching pending indents from Dispatch DB:', err.message);
+  }
 
   return pendingIndents;
 };

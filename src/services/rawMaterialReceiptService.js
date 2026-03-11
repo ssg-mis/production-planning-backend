@@ -35,11 +35,18 @@ const getPendingRawMaterialReceipts = async () => {
 
     // Use raw SQL for packing indents to avoid Prisma client sync issues with selected_skus
     const idList = indentIds.length > 0 ? indentIds.join(',') : '0';
-    const packingIndents = await prisma.$queryRawUnsafe(`
-        SELECT id, production_id, status, created_at, oil_qty, selected_skus 
-        FROM packing_raw_material_indent
-        WHERE id IN (${idList})
-    `);
+    let packingIndents = [];
+    if (idList !== '0') {
+        try {
+            packingIndents = await prisma.$queryRawUnsafe(`
+                SELECT id, production_id, status, created_at, oil_qty, selected_skus 
+                FROM packing_raw_material_indent
+                WHERE id IN (${idList})
+            `);
+        } catch (err) {
+            console.error('Error fetching packing indents for receipt via raw SQL:', err.message);
+        }
+    }
 
     // Fetch BOM items
     const bomItems = await prisma.packingRawMaterialBOM.findMany({
@@ -93,11 +100,18 @@ const getRawMaterialReceiptHistory = async () => {
 
     const packingIndentIds = issues.map(i => i.indent_id).filter(Boolean);
     const packingIdList = packingIndentIds.length > 0 ? packingIndentIds.join(',') : '0';
-    const packingIndents = await prisma.$queryRawUnsafe(`
-        SELECT id, production_id, status, created_at, oil_qty, selected_skus 
-        FROM packing_raw_material_indent
-        WHERE id IN (${packingIdList})
-    `);
+    let packingIndents = [];
+    if (packingIdList !== '0') {
+        try {
+            packingIndents = await prisma.$queryRawUnsafe(`
+                SELECT id, production_id, status, created_at, oil_qty, selected_skus 
+                FROM packing_raw_material_indent
+                WHERE id IN (${packingIdList})
+            `);
+        } catch (err) {
+            console.error('Error fetching packing indents history for receipt via raw SQL:', err.message);
+        }
+    }
 
     // Fetch BOM items for history
     const allBomItems = await prisma.packingRawMaterialBOM.findMany({

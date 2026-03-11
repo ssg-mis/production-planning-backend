@@ -50,11 +50,14 @@ const getPendingStockIn = async () => {
     });
 
     // Fetch packing indents for selected_skus using raw SQL safely
-    const packingIndents = await prisma.$queryRawUnsafe(`
-        SELECT production_id, selected_skus 
-        FROM packing_raw_material_indent 
-        WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
-    `);
+    let packingIndents = [];
+    if (productionIds.length > 0) {
+        packingIndents = await prisma.$queryRawUnsafe(`
+            SELECT production_id, selected_skus 
+            FROM packing_raw_material_indent 
+            WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
+        `);
+    }
 
     return pending.map(entry => {
         const indent = indents.find(i => i.production_id === entry.production_id);
@@ -91,11 +94,14 @@ const getStockInHistory = async () => {
     });
 
     // Fetch packing indents for selected_skus using raw SQL safely
-    const packingIndents = await prisma.$queryRawUnsafe(`
-        SELECT production_id, selected_skus 
-        FROM packing_raw_material_indent 
-        WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
-    `);
+    let packingIndents = [];
+    if (productionIds.length > 0) {
+        packingIndents = await prisma.$queryRawUnsafe(`
+            SELECT production_id, selected_skus 
+            FROM packing_raw_material_indent 
+            WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
+        `);
+    }
 
     return history.map(h => {
         const indent = indents.find(i => i.production_id === h.production_id);

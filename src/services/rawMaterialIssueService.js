@@ -6,10 +6,16 @@ const { prisma } = require('../config/db');
  */
 const getPendingRawMaterialIssues = async () => {
     // 1. Get all packing indents using queryRaw for selected_skus
-    const allPackingIndents = await prisma.$queryRawUnsafe(`
-        SELECT id, production_id, status, created_at, oil_qty, selected_skus 
-        FROM packing_raw_material_indent
-    `);
+    let allPackingIndents = [];
+    try {
+        allPackingIndents = await prisma.$queryRawUnsafe(`
+            SELECT id, production_id, status, created_at, oil_qty, selected_skus 
+            FROM packing_raw_material_indent
+        `);
+    } catch (err) {
+        console.error('Error fetching packing indents via raw SQL:', err.message);
+        // Fallback or empty list
+    }
     
     // Fetch BOM items separately (or we could join, but let's keep it simple)
     const bomItems = await prisma.packingRawMaterialBOM.findMany();
@@ -67,12 +73,18 @@ const getRawMaterialIssueHistory = async () => {
         where: { production_id: { in: productionIds } }
     });
 
-    const idList = indentIds.length > 0 ? indentIds.join(',') : '0';
-    const packingIndents = await prisma.$queryRawUnsafe(`
-        SELECT id, production_id, status, created_at, oil_qty, selected_skus 
-        FROM packing_raw_material_indent
-        WHERE id IN (${idList})
-    `);
+    let packingIndents = [];
+    if (indentIds.length > 0) {
+        try {
+            packingIndents = await prisma.$queryRawUnsafe(`
+                SELECT id, production_id, status, created_at, oil_qty, selected_skus 
+                FROM packing_raw_material_indent
+                WHERE id IN (${idList})
+            `);
+        } catch (err) {
+            console.error('Error fetching packing indents history via raw SQL:', err.message);
+        }
+    }
     
     // Attach BOM items manually for history
     const allBomItems = await prisma.packingRawMaterialBOM.findMany({

@@ -17,8 +17,15 @@ router.get('/pending', async (req, res) => {
 router.get('/fix-db', async (req, res) => {
   try {
     const { prisma } = require('../config/db');
-    await prisma.$executeRawUnsafe(`ALTER TABLE packing_raw_material_indent ADD COLUMN IF NOT EXISTS selected_skus JSONB;`);
-    res.json({ status: 'success', message: 'Column selected_skus added successfully' });
+    // Ensure selected_skus exists on packing_raw_material_indent
+    await prisma.$executeRawUnsafe(`ALTER TABLE packing_raw_material_indent ADD COLUMN IF NOT EXISTS selected_skus JSONB DEFAULT '[]';`);
+    // Ensure bom_consumption exists on production_entry
+    await prisma.$executeRawUnsafe(`ALTER TABLE production_entry ADD COLUMN IF NOT EXISTS bom_consumption JSONB DEFAULT '[]';`);
+    
+    res.json({ 
+      status: 'success', 
+      message: 'Database schema strengthened successfully. Columns added if they were missing.' 
+    });
   } catch (error) {
     console.error('Error fixing DB:', error);
     res.status(500).json({ status: 'error', message: error.message });
