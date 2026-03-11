@@ -21,10 +21,20 @@ const getPendingBalanceReceipts = async () => {
     }
 
     // 2. Get all processed balance receipts
-    const processedReceipts = await prisma.balanceMaterialReceipt.findMany({
-        select: { entry_id: true }
-    });
-    const processedEntryIds = processedReceipts.map(r => r.entry_id).filter(Boolean);
+    let processedReceipts = [];
+    try {
+        processedReceipts = await prisma.balanceMaterialReceipt.findMany({
+            select: { entry_id: true }
+        });
+    } catch (err) {
+        console.error('Error fetching processed receipts (missing entry_id?):', err.message);
+        try {
+            processedReceipts = await prisma.$queryRawUnsafe(`SELECT entry_id FROM balance_material_receipt`);
+        } catch (rawErr) {
+            console.error('Raw fallback for processed receipts failed:', rawErr.message);
+        }
+    }
+    const processedEntryIds = (processedReceipts || []).map(r => r.entry_id).filter(Boolean);
 
     // 3. Filter entries that have variance and are not yet fully processed
     // (For now, one balance receipt per production entry is the simplifyed logic, 

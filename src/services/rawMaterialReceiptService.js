@@ -23,10 +23,20 @@ const getPendingRawMaterialReceipts = async () => {
     if (allIssued.length === 0) return [];
 
     // 2. Get items already in raw_material_receipt
-    const alreadyReceived = await prisma.rawMaterialReceipt.findMany({
-        select: { issue_id: true }
-    });
-    const receivedIssueIds = alreadyReceived.map(r => r.issue_id).filter(Boolean);
+    let alreadyReceived = [];
+    try {
+        alreadyReceived = await prisma.rawMaterialReceipt.findMany({
+            select: { issue_id: true }
+        });
+    } catch (err) {
+        console.error('Error fetching already received items (missing issue_id?):', err.message);
+        try {
+            alreadyReceived = await prisma.$queryRawUnsafe(`SELECT issue_id FROM raw_material_receipt`);
+        } catch (rawErr) {
+            console.error('Raw fallback for already received items failed:', rawErr.message);
+        }
+    }
+    const receivedIssueIds = (alreadyReceived || []).map(r => r.issue_id).filter(Boolean);
 
     // 3. Pending = issued but not yet received
     const pendingIssues = allIssued.filter(i => !receivedIssueIds.includes(i.id));

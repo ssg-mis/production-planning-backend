@@ -43,6 +43,8 @@ router.get('/fix-db', async (req, res) => {
 
     res.json({ 
       status: 'success', 
+      version: '1.0.2',
+      lastUpdated: '2026-03-11 17:50',
       message: 'Database schema strengthened successfully. All missing columns for Packing, Issue, Receipt, and Production Entry have been added if they were missing.' 
     });
   } catch (error) {
