@@ -110,6 +110,7 @@ model PackingRawMaterialIndent {
   status        String                  @default("Allocated")
   created_at    DateTime                @default(now())
   oil_qty       Decimal?                @db.Decimal(10, 2)
+  selected_skus Json?
   bom_items     PackingRawMaterialBOM[]
 
   @@map("packing_raw_material_indent")

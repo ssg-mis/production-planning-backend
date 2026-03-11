@@ -89,3 +89,58 @@ Invalid `prisma.packingRawMaterialIndent.create()` invocation in
   143 
 → 144 const result = await prisma.packingRawMaterialIndent.create(
 Value out of range for the type: numeric field overflow
+Error creating packing indent: 
+Invalid `prisma.packingRawMaterialIndent.create()` invocation in
+/Users/vikaschoudhary/Documents/shri-shyam-projects/production-planning/production-planning-backend/src/services/packingRawMaterialService.js:169:58
+
+  166 
+  167 const validBomItems = (bomItems || []).filter(item => item.itemName && item.itemName.trim() !== '');
+  168 
+→ 169 const result = await prisma.packingRawMaterialIndent.create({
+        data: {
+          production_id: "PD-187",
+          oil_qty: 500,
+          selected_skus: [
+          ~~~~~~~~~~~~~
+            {
+              skuName: "HK SBO 750 MLT PP (1*12)",
+              qty: 500
+            }
+          ],
+          status: "Allocated",
+          bom_items: {
+            create: [
+              {
+                production_id: "PD-187",
+                item_name: "Printed Green Carton Box for HK SBO 800 MLT PP (1*12)",
+                qty_required: 500,
+                qty_allocated: 500
+              },
+              {
+                production_id: "PD-187",
+                item_name: "Printed Transparent Tape",
+                qty_required: 2000,
+                qty_allocated: 2000
+              },
+              {
+                production_id: "PD-187",
+                item_name: "Empty Printed Pouch for HK SBO 1 LTR PP",
+                qty_required: 6000,
+                qty_allocated: 6000
+              },
+              {
+                production_id: "PD-187",
+                item_name: "Refined Soya Bean Oil",
+                qty_required: 4092000,
+                qty_allocated: 4092000
+              }
+            ]
+          },
+      ?   created_at?: DateTime
+        },
+        include: {
+          bom_items: true
+        }
+      })
+
+Unknown argument `selected_skus`. Available options are marked with ?.

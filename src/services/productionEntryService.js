@@ -44,25 +44,43 @@ const getPendingProductionEntries = async () => {
         where: { id: { in: issueIds } }
     });
 
-    const packingIndents = await prisma.packingRawMaterialIndent.findMany({
-        where: { id: { in: issues.map(i => i.indent_id).filter(Boolean) } },
-        include: { bom_items: true }
+    const approvals = await prisma.indentApproval.findMany({
+        where: { production_id: { in: productionIds } }
+    });
+
+    // Use raw SQL for packing indents to avoid Prisma client sync issues with selected_skus
+    const pIndentIds = issues.map(i => i.indent_id).filter(Boolean);
+    const idList = pIndentIds.length > 0 ? pIndentIds.join(',') : '0';
+    const packingIndents = await prisma.$queryRawUnsafe(`
+        SELECT id, production_id, status, created_at, oil_qty, selected_skus 
+        FROM packing_raw_material_indent
+        WHERE id IN (${idList})
+    `);
+
+    // Fetch BOM items
+    const bomItems = await prisma.packingRawMaterialBOM.findMany({
+        where: { indent_id: { in: pIndentIds } }
     });
 
     return pendingReceipts.map(receipt => {
         const prodIndent = indents.find(i => i.production_id === receipt.production_id);
         const issue = issues.find(i => i.id === receipt.issue_id);
         const pIndent = issue ? packingIndents.find(p => p.id === issue.indent_id) : null;
+        const approval = approvals.find(a => a.production_id === receipt.production_id);
+        
+        const bom = pIndent ? bomItems.filter(b => b.indent_id === pIndent.id) : [];
 
         return {
             ...(prodIndent || {}),
-            id: receipt.id, // Use Receipt ID for selection tracking
+            id: receipt.id, 
             production_id: receipt.production_id,
             receipt_id: receipt.id,
             issue_id: receipt.issue_id,
             oil_qty: receipt.remaining_oil_qty,
             total_received_qty: Number(receipt.oil_qty || 0),
-            bom: pIndent ? pIndent.bom_items : [],
+            given_from_tank_no: approval ? approval.given_from_tank_no : '-',
+            selected_skus: pIndent ? (pIndent.selected_skus || []) : [],
+            bom: bom,
             status: 'Pending'
         };
     });
@@ -86,27 +104,43 @@ const getProductionEntryHistory = async () => {
     const receipts = await prisma.rawMaterialReceipt.findMany({
         where: { id: { in: receiptIds } }
     });
-
+ 
     const issues = await prisma.rawMaterialIssue.findMany({
         where: { id: { in: receipts.map(r => r.issue_id).filter(Boolean) } }
     });
 
-    const packingIndents = await prisma.packingRawMaterialIndent.findMany({
-        where: { id: { in: issues.map(i => i.indent_id).filter(Boolean) } },
-        include: { bom_items: true }
+    const approvals = await prisma.indentApproval.findMany({
+        where: { production_id: { in: productionIds } }
     });
+ 
+    const packingIndentIds = issues.map(i => i.indent_id).filter(Boolean);
+    const packingIdList = packingIndentIds.length > 0 ? packingIndentIds.join(',') : '0';
+    const packingIndents = await prisma.$queryRawUnsafe(`
+        SELECT id, production_id, status, created_at, oil_qty, selected_skus 
+        FROM packing_raw_material_indent
+        WHERE id IN (${packingIdList})
+    `);
 
+    // Fetch BOM items for history
+    const allBomItems = await prisma.packingRawMaterialBOM.findMany({
+        where: { indent_id: { in: packingIndentIds } }
+    });
+ 
     return history.map(h => {
         const prodIndent = indents.find(i => i.production_id === h.production_id);
         const receipt = receipts.find(r => r.id === h.receipt_id);
         const issue = receipt ? issues.find(i => i.id === receipt.issue_id) : null;
+        const approval = approvals.find(a => a.production_id === h.production_id);
         const pIndent = issue ? packingIndents.find(p => p.id === issue.indent_id) : null;
-
+        const bom = pIndent ? allBomItems.filter(b => b.indent_id === pIndent.id) : [];
+ 
         return {
             ...h,
             indentDetails: prodIndent || null,
             oil_qty: h.oil_qty ? Number(h.oil_qty) : (receipt?.oil_qty ? Number(receipt.oil_qty) : 0),
-            bom: pIndent ? pIndent.bom_items : []
+            given_from_tank_no: approval ? approval.given_from_tank_no : '-',
+            selected_skus: pIndent ? (pIndent.selected_skus || []) : [],
+            bom: bom
         };
     });
 };

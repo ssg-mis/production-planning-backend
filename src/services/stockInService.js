@@ -27,9 +27,6 @@ const getPendingStockIn = async () => {
         const bom = entry.bom_consumption || [];
         const hasVariance = bom.some(item => (item.diff || 0) > 0 || (item.returned || 0) > 0 || (item.damaged || 0) > 0);
 
-        // Logic: 
-        // - If it has variance/returns, MUST have a balance receipt record first.
-        // - If it has NO variance, it can proceed to Stock In directly after Production Entry.
         if (hasVariance && !balanceEntryIds.includes(entry.id)) return null;
 
         const matchingStockIn = allStockIn.filter(s => s.entry_id === entry.id);
@@ -52,16 +49,25 @@ const getPendingStockIn = async () => {
         where: { production_id: { in: productionIds } }
     });
 
+    // Fetch packing indents for selected_skus using raw SQL safely
+    const packingIndents = await prisma.$queryRawUnsafe(`
+        SELECT production_id, selected_skus 
+        FROM packing_raw_material_indent 
+        WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
+    `);
+
     return pending.map(entry => {
         const indent = indents.find(i => i.production_id === entry.production_id);
+        const packingIndent = packingIndents.find(pi => pi.production_id === entry.production_id);
         return {
             ...entry,
-            id: entry.id, // Use Entry ID for selection
+            id: entry.id,
             entry_id: entry.id,
             productName: indent ? indent.product_name : 'Unknown',
             packingSize: indent ? indent.packing_size : '',
             partyName: indent ? indent.party_name : '',
-            status: 'Pending'
+            status: 'Pending',
+            selected_skus: packingIndent ? packingIndent.selected_skus : []
         };
     });
 };
@@ -79,20 +85,29 @@ const getStockInHistory = async () => {
         where: { id: { in: entryIds } }
     });
 
-    const productionIds = history.map(h => h.production_id);
+    const productionIds = [...new Set(history.map(h => h.production_id))];
     const indents = await prisma.productionIndent.findMany({
         where: { production_id: { in: productionIds } }
     });
 
+    // Fetch packing indents for selected_skus using raw SQL safely
+    const packingIndents = await prisma.$queryRawUnsafe(`
+        SELECT production_id, selected_skus 
+        FROM packing_raw_material_indent 
+        WHERE production_id IN (${productionIds.map(id => `'${id}'`).join(',')})
+    `);
+
     return history.map(h => {
         const indent = indents.find(i => i.production_id === h.production_id);
         const entry = productionEntries.find(p => p.id === h.entry_id);
+        const packingIndent = packingIndents.find(pi => pi.production_id === h.production_id);
         return {
             ...h,
             productName: indent ? indent.product_name : 'Unknown',
             packingSize: indent ? indent.packing_size : '',
             partyName: indent ? indent.party_name : '',
-            actualQtyProduced: entry ? Number(entry.actual_qty || 0) : 0
+            actualQtyProduced: entry ? Number(entry.actual_qty || 0) : 0,
+            selected_skus: packingIndent ? packingIndent.selected_skus : []
         };
     });
 };

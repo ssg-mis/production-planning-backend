@@ -13,6 +13,18 @@ router.get('/pending', async (req, res) => {
   }
 });
 
+// Debug route to add column
+router.get('/fix-db', async (req, res) => {
+  try {
+    const { prisma } = require('../config/db');
+    await prisma.$executeRawUnsafe(`ALTER TABLE packing_raw_material_indent ADD COLUMN IF NOT EXISTS selected_skus JSONB;`);
+    res.json({ status: 'success', message: 'Column selected_skus added successfully' });
+  } catch (error) {
+    console.error('Error fixing DB:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 // Get packing raw material indent history
 router.get('/history', async (req, res) => {
   try {
@@ -43,6 +55,32 @@ router.post('/', async (req, res) => {
       return res.status(409).json({ error: `Indent for ${req.body.productionId} already exists` });
     }
     res.status(500).json({ error: 'Failed to create packing indent', details: error.message });
+  }
+});
+
+// Fetch SKUs by oil type
+router.get('/skus', async (req, res) => {
+  try {
+    const { oilType } = req.query;
+    if (!oilType) return res.status(400).json({ error: 'oilType is required' });
+    const skus = await packingRawMaterialService.getSKUsByOilType(oilType);
+    res.json(skus);
+  } catch (error) {
+    console.error('Error fetching SKUs:', error);
+    res.status(500).json({ error: 'Failed to fetch SKUs' });
+  }
+});
+
+// Fetch BOM for a specific SKU
+router.get('/bom', async (req, res) => {
+  try {
+    const { skuName } = req.query;
+    if (!skuName) return res.status(400).json({ error: 'skuName is required' });
+    const bom = await packingRawMaterialService.getBOMForProduct(skuName);
+    res.json(bom);
+  } catch (error) {
+    console.error('Error fetching BOM:', error);
+    res.status(500).json({ error: 'Failed to fetch BOM' });
   }
 });
 

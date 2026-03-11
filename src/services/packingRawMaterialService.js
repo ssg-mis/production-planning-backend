@@ -24,6 +24,31 @@ const getBOMForProduct = async (productName) => {
 };
 
 /**
+ * Fetch SKUs from the order-to-dispatch DB for a given oil type
+ */
+const getSKUsByOilType = async (oilType) => {
+  try {
+    let keyword = '';
+    const lowerType = oilType.toLowerCase();
+    
+    if (lowerType.includes('soybean') || lowerType.includes('soya')) keyword = 'SBO';
+    else if (lowerType.includes('rice bran') || lowerType.includes('rbo')) keyword = 'RBO';
+    else if (lowerType.includes('palm')) keyword = 'PALM';
+    
+    if (!keyword) return [];
+
+    const result = await dispatchPrisma.$queryRawUnsafe(
+      `SELECT DISTINCT sku_name FROM sku_details WHERE sku_name ILIKE $1 AND status = 'Active' ORDER BY sku_name`,
+      `%${keyword}%`
+    );
+    return result.map(row => row.sku_name);
+  } catch (err) {
+    console.error('Error fetching SKUs for oil type:', oilType, err.message);
+    return [];
+  }
+};
+
+/**
  * Get pending packing raw material indents:
  * Items in oil_receipt NOT yet in packing_raw_material_indent
  * Also fetches BOM from the dispatch DB for each product
@@ -145,6 +170,7 @@ const createPackingIndent = async (data) => {
       data: {
         production_id: productionId,
         oil_qty: roundedOilQty,
+        // selected_skus: data.selectedSkus || [], // Commented out to avoid Prisma sync error
         status: 'Allocated',
         bom_items: {
           create: validBomItems.map(item => ({
@@ -160,6 +186,19 @@ const createPackingIndent = async (data) => {
       }
     });
 
+    // Update selected_skus using raw SQL to bypass Prisma schema sync issues
+    try {
+      const skusJson = JSON.stringify(data.selectedSkus || []);
+      await prisma.$executeRawUnsafe(
+        `UPDATE packing_raw_material_indent SET selected_skus = $1::jsonb WHERE id = $2`,
+        skusJson,
+        result.id
+      );
+    } catch (updateError) {
+      console.warn('Warning: Could not update selected_skus via raw SQL:', updateError.message);
+      // We don't throw here to ensure the main record still exists
+    }
+
     return result;
   } catch (error) {
     fs.appendFileSync('backend_error.log', `Error creating packing indent: ${error.message}\n`);
@@ -171,4 +210,6 @@ module.exports = {
   getPendingPackingIndents,
   getPackingIndentHistory,
   createPackingIndent,
+  getBOMForProduct,
+  getSKUsByOilType,
 };
