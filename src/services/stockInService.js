@@ -22,10 +22,20 @@ const getPendingStockIn = async () => {
     if (productionEntries.length === 0) return [];
 
     // 2. Get all balance receipts (dependency)
-    const balanceReceipts = await prisma.balanceMaterialReceipt.findMany({
-        select: { entry_id: true }
-    });
-    const balanceEntryIds = balanceReceipts.map(r => r.entry_id).filter(Boolean);
+    let balanceReceipts = [];
+    try {
+        balanceReceipts = await prisma.balanceMaterialReceipt.findMany({
+            select: { entry_id: true }
+        });
+    } catch (err) {
+        console.error('Error fetching balance receipts for stock-in:', err.message);
+        try {
+            balanceReceipts = await prisma.$queryRawUnsafe(`SELECT entry_id FROM balance_material_receipt`);
+        } catch (rawErr) {
+            console.error('Raw fallback for balance receipts failed:', rawErr.message);
+        }
+    }
+    const balanceEntryIds = (balanceReceipts || []).map(r => r.entry_id).filter(Boolean);
 
     // 3. Get all stock_in records to calculate remaining quantities
     const allStockIn = await prisma.stockIn.findMany({

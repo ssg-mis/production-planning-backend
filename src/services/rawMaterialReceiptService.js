@@ -5,20 +5,16 @@ const { prisma } = require('../config/db');
  * Items in raw_material_issue NOT yet in raw_material_receipt
  */
 const getPendingRawMaterialReceipts = async () => {
-    // 1. Get all issued items
+    // 1. Get all issued items (using raw SQL for robustness)
     let allIssued = [];
     try {
-        allIssued = await prisma.rawMaterialIssue.findMany({
-            where: { status: 'Issued' }
-        });
-    } catch (err) {
-        console.error('Error fetching issued items (missing columns?):', err.message);
-        // Try raw fallback
-        try {
-            allIssued = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE status = 'Issued'`);
-        } catch (rawErr) {
-            console.error('Raw fallback for issues failed:', rawErr.message);
+        allIssued = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE status = 'Issued'`);
+        if (!allIssued || allIssued.length === 0) {
+            allIssued = await prisma.rawMaterialIssue.findMany({ where: { status: 'Issued' } });
         }
+    } catch (err) {
+        console.error('[RMReceipt] Error fetching issues:', err.message);
+        allIssued = await prisma.rawMaterialIssue.findMany({ where: { status: 'Issued' } });
     }
     if (allIssued.length === 0) return [];
 
@@ -46,13 +42,26 @@ const getPendingRawMaterialReceipts = async () => {
     const indentIds = [...new Set(pendingIssues.map(i => i.indent_id).filter(Boolean))];
 
     // 4. Fetch related data
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
-
-    const approvals = await prisma.indentApproval.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    let indents = [];
+    let approvals = [];
+    try {
+        indents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+        approvals = await prisma.indentApproval.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching related data for receipt:', err.message);
+        try {
+            if (productionIds.length > 0) {
+                const idString = productionIds.map(id => `'${id}'`).join(',');
+                indents = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id IN (${idString})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for indents failed in receipt:', rawErr.message);
+        }
+    }
 
     // Use raw SQL for packing indents to avoid Prisma client sync issues with selected_skus
     const idList = indentIds.length > 0 ? indentIds.join(',') : '0';
@@ -117,29 +126,33 @@ const getRawMaterialReceiptHistory = async () => {
     const productionIds = history.map(h => h.production_id);
     const issueIds = history.map(h => h.issue_id).filter(Boolean);
 
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
-
+    let indents = [];
     let issues = [];
+    let approvals = [];
     try {
+        indents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
         issues = await prisma.rawMaterialIssue.findMany({
             where: { id: { in: issueIds } }
         });
+        approvals = await prisma.indentApproval.findMany({
+            where: { production_id: { in: productionIds } }
+        });
     } catch (err) {
-        console.error('Error fetching issues for receipt history:', err.message);
+        console.error('Error fetching data for receipt history:', err.message);
         try {
+            if (productionIds.length > 0) {
+                const idString = productionIds.map(id => `'${id}'`).join(',');
+                indents = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id IN (${idString})`);
+            }
             if (issueIds.length > 0) {
                 issues = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE id IN (${issueIds.join(',')})`);
             }
         } catch (rawErr) {
-            console.error('Raw fallback for issues history failed:', rawErr.message);
+            console.error('Raw fallback for history failed in receipt:', rawErr.message);
         }
     }
-
-    const approvals = await prisma.indentApproval.findMany({
-        where: { production_id: { in: productionIds } }
-    });
 
     const packingIndentIds = issues.map(i => i.indent_id).filter(Boolean);
     const packingIdList = packingIndentIds.length > 0 ? packingIndentIds.join(',') : '0';
@@ -185,6 +198,7 @@ const getRawMaterialReceiptHistory = async () => {
 const createRawMaterialReceipt = async (data) => {
     const { productionId, remarks, receivedBy, issueId, oilQty } = data;
 
+    console.log(`[RMReceipt] Creating receipt for prodId: ${productionId} | oilQty: ${oilQty}`);
     const result = await prisma.rawMaterialReceipt.create({
         data: {
             production_id: productionId,
@@ -198,13 +212,16 @@ const createRawMaterialReceipt = async (data) => {
 
     // Update new columns via raw SQL
     try {
+        console.log(`[RMReceipt] Updating raw columns for ID: ${result.id} | issueId: ${issueId} | qty: ${oilQty}`);
         await prisma.$executeRawUnsafe(
             `UPDATE raw_material_receipt SET issue_id = $1, oil_qty = $2 WHERE id = $3`,
             issueId ? Number(issueId) : null,
             oilQty ? Number(oilQty) : null,
             result.id
         );
+        console.log(`[RMReceipt] Update successful`);
     } catch (err) {
+        console.error('[RMReceipt] Update failed:', err.message);
         console.warn('Warning: Could not update RM Receipt new columns via raw SQL:', err.message);
     }
 

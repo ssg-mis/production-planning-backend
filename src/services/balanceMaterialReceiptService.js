@@ -104,7 +104,7 @@ const getBalanceReceiptHistory = async () => {
                 productionEntries = await prisma.$queryRawUnsafe(`SELECT * FROM production_entry WHERE id IN (${entryIds.join(',')})`);
             }
         } catch (rawErr) {
-            console.error('Raw fallback for entries in balance history failed:', rawErr.message);
+            console.error('Raw fallback for entries failed in balance history:', rawErr.message);
         }
     }
 

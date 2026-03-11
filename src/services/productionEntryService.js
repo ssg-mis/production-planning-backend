@@ -5,25 +5,30 @@ const { prisma } = require('../config/db');
  * Items in raw_material_receipt with remaining quantity to be processed
  */
 const getPendingProductionEntries = async () => {
-    // 1. Get all received items
-    const allReceived = await prisma.rawMaterialReceipt.findMany({
-        where: { status: 'Received' }
-    });
+    // 1. Get all received items (using raw SQL because Prisma client might be outdated)
+    let allReceived = [];
+    try {
+        allReceived = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_receipt WHERE status = 'Received'`);
+        if (!allReceived || allReceived.length === 0) {
+            // Fallback to findMany if raw failed for some reason
+            allReceived = await prisma.rawMaterialReceipt.findMany({ where: { status: 'Received' } });
+        }
+    } catch (err) {
+        console.error('[PendingPE] Error fetching receipts:', err.message);
+        allReceived = await prisma.rawMaterialReceipt.findMany({ where: { status: 'Received' } });
+    }
+    console.log(`[PendingPE] Found ${allReceived.length} received items`);
     if (allReceived.length === 0) return [];
 
     // 2. Get all production entries to calculate processed quantities
     let allProduced = [];
     try {
+        allProduced = await prisma.$queryRawUnsafe(`SELECT receipt_id, actual_qty, oil_qty FROM production_entry`);
+    } catch (err) {
+        console.error('[PendingPE] Error fetching production entries:', err.message);
         allProduced = await prisma.productionEntry.findMany({
             select: { receipt_id: true, actual_qty: true, oil_qty: true }
         });
-    } catch (err) {
-        console.error('Error fetching production entries (missing oil_qty?):', err.message);
-        try {
-            allProduced = await prisma.$queryRawUnsafe(`SELECT receipt_id, actual_qty, oil_qty FROM production_entry`);
-        } catch (rawErr) {
-            console.error('Raw fallback for entries failed:', rawErr.message);
-        }
     }
 
     // 3. Calculate remaining quantity for each receipt
@@ -31,6 +36,8 @@ const getPendingProductionEntries = async () => {
         const matchingEntries = allProduced.filter(p => p.receipt_id === receipt.id);
         const totalProcessedThisReceipt = matchingEntries.reduce((acc, curr) => acc + Number(curr.oil_qty || 0), 0);
         const remainingOilToProcess = Number(receipt.oil_qty || 0) - totalProcessedThisReceipt;
+
+        console.log(`[PendingPE] Receipt ${receipt.id}: oil_qty=${receipt.oil_qty}, processed=${totalProcessedThisReceipt}, remaining=${remainingOilToProcess}`);
 
         if (remainingOilToProcess <= 0.01) return null; // Fully processed (with small float tolerance)
 
@@ -40,23 +47,37 @@ const getPendingProductionEntries = async () => {
         };
     }).filter(Boolean);
 
+    console.log(`[PendingPE] Remaining receipts after filter: ${pendingReceipts.length}`);
     if (pendingReceipts.length === 0) return [];
 
     const productionIds = [...new Set(pendingReceipts.map(r => r.production_id))];
     const issueIds = [...new Set(pendingReceipts.map(r => r.issue_id).filter(Boolean))];
 
     // 4. Fetch related data
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
-
-    const issues = await prisma.rawMaterialIssue.findMany({
-        where: { id: { in: issueIds } }
-    });
-
-    const approvals = await prisma.indentApproval.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    let indents = [];
+    let issues = [];
+    let approvals = [];
+    try {
+        indents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+        issues = await prisma.rawMaterialIssue.findMany({
+            where: { id: { in: issueIds } }
+        });
+        approvals = await prisma.indentApproval.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching related data for production entry:', err.message);
+        // Fallback for issues which is the most likely culprit
+        try {
+            if (issueIds.length > 0) {
+                issues = await prisma.$queryRawUnsafe(`SELECT * FROM raw_material_issue WHERE id IN (${issueIds.join(',')})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for issues failed in production entry:', rawErr.message);
+        }
+    }
 
     // Use raw SQL for packing indents to avoid Prisma client sync issues with selected_skus
     const pIndentIds = issues.map(i => i.indent_id).filter(Boolean);
@@ -75,9 +96,14 @@ const getPendingProductionEntries = async () => {
     }
 
     // Fetch BOM items
-    const bomItems = await prisma.packingRawMaterialBOM.findMany({
-        where: { indent_id: { in: pIndentIds } }
-    });
+    let bomItems = [];
+    try {
+        bomItems = await prisma.packingRawMaterialBOM.findMany({
+            where: { indent_id: { in: pIndentIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching BOM items for production entry:', err.message);
+    }
 
     return pendingReceipts.map(receipt => {
         const prodIndent = indents.find(i => i.production_id === receipt.production_id);
@@ -124,9 +150,22 @@ const getProductionEntryHistory = async () => {
     const productionIds = history.map(h => h.production_id);
     const receiptIds = history.map(h => h.receipt_id).filter(Boolean);
 
-    const indents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    let indents = [];
+    try {
+        indents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching indents for production history:', err.message);
+        try {
+            if (productionIds.length > 0) {
+                const idString = productionIds.map(id => `'${id}'`).join(',');
+                indents = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id IN (${idString})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for history indents failed:', rawErr.message);
+        }
+    }
 
     let receipts = [];
     try {
@@ -162,9 +201,14 @@ const getProductionEntryHistory = async () => {
         }
     }
 
-    const approvals = await prisma.indentApproval.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    let approvals = [];
+    try {
+        approvals = await prisma.indentApproval.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching approvals for production history:', err.message);
+    }
  
     const packingIndentIds = issues.map(i => i.indent_id).filter(Boolean);
     const packingIdList = packingIndentIds.length > 0 ? packingIndentIds.join(',') : '0';

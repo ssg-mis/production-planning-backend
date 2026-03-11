@@ -5,16 +5,19 @@ const { prisma } = require('../config/db');
  * Items in packing_raw_material_indent NOT yet in raw_material_issue
  */
 const getPendingRawMaterialIssues = async () => {
-    // 1. Get all packing indents using queryRaw for selected_skus
+    // 1. Get all packing indents using queryRaw for robustness
     let allPackingIndents = [];
     try {
         allPackingIndents = await prisma.$queryRawUnsafe(`
             SELECT id, production_id, status, created_at, oil_qty, selected_skus 
             FROM packing_raw_material_indent
         `);
+        if (!allPackingIndents || allPackingIndents.length === 0) {
+            allPackingIndents = await prisma.packingRawMaterialIndent.findMany();
+        }
     } catch (err) {
-        console.error('Error fetching packing indents via raw SQL:', err.message);
-        // Fallback or empty list
+        console.error('[RMIssue] Error fetching packing indents:', err.message);
+        allPackingIndents = await prisma.packingRawMaterialIndent.findMany();
     }
     
     // Fetch BOM items separately (or we could join, but let's keep it simple)
@@ -26,19 +29,16 @@ const getPendingRawMaterialIssues = async () => {
 
     if (allPackingIndents.length === 0) return [];
 
-    // 2. Get already issued indent IDs
+    // 2. Get already issued indent IDs (using raw SQL for robustness)
     let alreadyIssued = [];
     try {
-        alreadyIssued = await prisma.rawMaterialIssue.findMany({
-            select: { indent_id: true }
-        });
-    } catch (err) {
-        console.error('Error fetching already issued indents (missing columns?):', err.message);
-        try {
-            alreadyIssued = await prisma.$queryRawUnsafe(`SELECT indent_id FROM raw_material_issue`);
-        } catch (rawErr) {
-            console.error('Raw fallback for issued indents failed:', rawErr.message);
+        alreadyIssued = await prisma.$queryRawUnsafe(`SELECT indent_id FROM raw_material_issue`);
+        if (!alreadyIssued || alreadyIssued.length === 0) {
+            alreadyIssued = await prisma.rawMaterialIssue.findMany({ select: { indent_id: true } });
         }
+    } catch (err) {
+        console.error('[RMIssue] Error fetching issued indents:', err.message);
+        alreadyIssued = await prisma.rawMaterialIssue.findMany({ select: { indent_id: true } });
     }
     const issuedIndentIds = (alreadyIssued || []).map(i => i.indent_id).filter(Boolean);
 
@@ -49,9 +49,22 @@ const getPendingRawMaterialIssues = async () => {
     const productionIds = [...new Set(pendingPackingIndents.map(p => p.production_id))];
 
     // 4. Fetch production indent details
-    const productionIndents = await prisma.productionIndent.findMany({
-        where: { production_id: { in: productionIds } }
-    });
+    let productionIndents = [];
+    try {
+        productionIndents = await prisma.productionIndent.findMany({
+            where: { production_id: { in: productionIds } }
+        });
+    } catch (err) {
+        console.error('Error fetching production indents for issue:', err.message);
+        try {
+            if (productionIds.length > 0) {
+                const idString = productionIds.map(id => `'${id}'`).join(',');
+                productionIndents = await prisma.$queryRawUnsafe(`SELECT * FROM production_indent WHERE production_id IN (${idString})`);
+            }
+        } catch (rawErr) {
+            console.error('Raw fallback for production indents failed:', rawErr.message);
+        }
+    }
 
     return pendingPackingIndents.map(p => {
         const prodIndent = productionIndents.find(pi => pi.production_id === p.production_id);
