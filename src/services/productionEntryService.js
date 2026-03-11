@@ -211,18 +211,34 @@ const getProductionEntryHistory = async () => {
 const createProductionEntry = async (data) => {
     const { productionId, actualQty, remarks, processedBy, bomConsumption, receiptId, oilQty } = data;
 
-    return await prisma.productionEntry.create({
+    const result = await prisma.productionEntry.create({
         data: {
             production_id: productionId,
-            receipt_id: receiptId ? Number(receiptId) : null,
-            actual_qty: actualQty ? Number(actualQty) : null,
-            oil_qty: oilQty ? Number(oilQty) : null,
+            // receipt_id: receiptId ? Number(receiptId) : null,
+            // actual_qty: actualQty ? Number(actualQty) : null,
+            // oil_qty: oilQty ? Number(oilQty) : null,
             remarks: remarks,
             processed_by: processedBy,
             status: 'Completed',
-            bom_consumption: bomConsumption
+            // bom_consumption: bomConsumption
         }
     });
+
+    // Update new columns via raw SQL
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE production_entry SET receipt_id = $1, actual_qty = $2, oil_qty = $3, bom_consumption = $4::jsonb WHERE id = $5`,
+            receiptId ? Number(receiptId) : null,
+            actualQty ? Number(actualQty) : null,
+            oilQty ? Number(oilQty) : null,
+            JSON.stringify(bomConsumption || []),
+            result.id
+        );
+    } catch (err) {
+        console.warn('Warning: Could not update Production Entry new columns via raw SQL:', err.message);
+    }
+
+    return result;
 };
 
 module.exports = {

@@ -135,16 +135,30 @@ const getRawMaterialIssueHistory = async () => {
 const createRawMaterialIssue = async (data) => {
     const { productionId, remarks, issuedBy, indentId, oilQty } = data;
 
-    return await prisma.rawMaterialIssue.create({
+    const result = await prisma.rawMaterialIssue.create({
         data: {
             production_id: productionId,
-            indent_id: indentId ? Number(indentId) : null,
-            oil_qty: oilQty ? Number(oilQty) : null,
+            // indent_id: indentId ? Number(indentId) : null,
+            // oil_qty: oilQty ? Number(oilQty) : null,
             remarks: remarks,
             issued_by: issuedBy,
             status: 'Issued'
         }
     });
+
+    // Update new columns via raw SQL
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE raw_material_issue SET indent_id = $1, oil_qty = $2 WHERE id = $3`,
+            indentId ? Number(indentId) : null,
+            oilQty ? Number(oilQty) : null,
+            result.id
+        );
+    } catch (err) {
+        console.warn('Warning: Could not update RM Issue new columns via raw SQL:', err.message);
+    }
+
+    return result;
 };
 
 module.exports = {

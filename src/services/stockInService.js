@@ -134,36 +134,65 @@ const getStockInHistory = async () => {
 const createStockIn = async (data) => {
     const { productionId, entryId, finishedQty, acceptedQty, receivedBy, remarks } = data;
 
-    return await prisma.stockIn.create({
+    const result = await prisma.stockIn.create({
         data: {
             production_id: productionId,
-            entry_id: entryId ? Number(entryId) : null,
-            finished_qty: Number(finishedQty) || null,
-            accepted_qty: Number(acceptedQty) || null,
+            // entry_id: entryId ? Number(entryId) : null,
+            // finished_qty: Number(finishedQty) || null,
+            // accepted_qty: Number(acceptedQty) || null,
             received_by: receivedBy,
             remarks: remarks,
             status: 'Accepted'
         }
     });
+
+    // Update new columns via raw SQL
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE stock_in SET entry_id = $1, finished_qty = $2, accepted_qty = $3 WHERE id = $4`,
+            entryId ? Number(entryId) : null,
+            Number(finishedQty) || null,
+            Number(acceptedQty) || null,
+            result.id
+        );
+    } catch (err) {
+        console.warn('Warning: Could not update Stock In new columns via raw SQL:', err.message);
+    }
+
+    return result;
 };
 
 /**
  * Bulk create stock in records
  */
 const bulkCreateStockIn = async (items) => {
-    return await prisma.$transaction(
-        items.map(item => prisma.stockIn.create({
-            data: {
-                production_id: item.productionId,
-                entry_id: item.entryId ? Number(item.entryId) : null,
-                finished_qty: Number(item.finishedQty) || null,
-                accepted_qty: Number(item.acceptedQty) || null,
-                received_by: item.receivedBy,
-                remarks: item.remarks || '',
-                status: 'Accepted'
-            }
-        }))
-    );
+    return await prisma.$transaction(async (tx) => {
+        const results = [];
+        for (const item of items) {
+            const result = await tx.stockIn.create({
+                data: {
+                    production_id: item.productionId,
+                    // entry_id: item.entryId ? Number(item.entryId) : null,
+                    // finished_qty: Number(item.finishedQty) || null,
+                    // accepted_qty: Number(item.acceptedQty) || null,
+                    received_by: item.receivedBy,
+                    remarks: item.remarks || '',
+                    status: 'Accepted'
+                }
+            });
+
+            // Update new columns via raw SQL for each item
+            await tx.$executeRawUnsafe(
+                `UPDATE stock_in SET entry_id = $1, finished_qty = $2, accepted_qty = $3 WHERE id = $4`,
+                item.entryId ? Number(item.entryId) : null,
+                Number(item.finishedQty) || null,
+                Number(item.acceptedQty) || null,
+                result.id
+            );
+            results.push(result);
+        }
+        return results;
+    });
 };
 
 module.exports = {

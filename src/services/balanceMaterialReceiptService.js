@@ -122,16 +122,30 @@ const getBalanceReceiptHistory = async () => {
 const createBalanceReceipt = async (data) => {
     const { productionId, entryId, receivedBy, remarks, materialReceipts } = data;
 
-    return await prisma.balanceMaterialReceipt.create({
+    const result = await prisma.balanceMaterialReceipt.create({
         data: {
             production_id: productionId,
-            entry_id: entryId ? Number(entryId) : null,
+            // entry_id: entryId ? Number(entryId) : null,
             received_by: receivedBy,
             remarks: remarks,
-            material_receipts: materialReceipts,
+            // material_receipts: materialReceipts,
             status: 'Received'
         }
     });
+
+    // Update new columns via raw SQL
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE balance_material_receipt SET entry_id = $1, material_receipts = $2::jsonb WHERE id = $3`,
+            entryId ? Number(entryId) : null,
+            JSON.stringify(materialReceipts || []),
+            result.id
+        );
+    } catch (err) {
+        console.warn('Warning: Could not update Balance Receipt new columns via raw SQL:', err.message);
+    }
+
+    return result;
 };
 
 module.exports = {

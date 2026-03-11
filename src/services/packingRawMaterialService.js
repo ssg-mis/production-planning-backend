@@ -210,7 +210,7 @@ const createPackingIndent = async (data) => {
     const result = await prisma.packingRawMaterialIndent.create({
       data: {
         production_id: productionId,
-        oil_qty: roundedOilQty,
+        // oil_qty: roundedOilQty, // Commented out to avoid Prisma sync error
         // selected_skus: data.selectedSkus || [], // Commented out to avoid Prisma sync error
         status: 'Allocated',
         bom_items: {
@@ -227,17 +227,17 @@ const createPackingIndent = async (data) => {
       }
     });
 
-    // Update selected_skus using raw SQL to bypass Prisma schema sync issues
+    // Update new columns using raw SQL to bypass Prisma schema sync issues
     try {
       const skusJson = JSON.stringify(data.selectedSkus || []);
       await prisma.$executeRawUnsafe(
-        `UPDATE packing_raw_material_indent SET selected_skus = $1::jsonb WHERE id = $2`,
+        `UPDATE packing_raw_material_indent SET selected_skus = $1::jsonb, oil_qty = $2 WHERE id = $3`,
         skusJson,
+        roundedOilQty,
         result.id
       );
     } catch (updateError) {
-      console.warn('Warning: Could not update selected_skus via raw SQL:', updateError.message);
-      // We don't throw here to ensure the main record still exists
+      console.warn('Warning: Could not update new columns via raw SQL:', updateError.message);
     }
 
     return result;

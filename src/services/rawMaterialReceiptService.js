@@ -175,16 +175,30 @@ const getRawMaterialReceiptHistory = async () => {
 const createRawMaterialReceipt = async (data) => {
     const { productionId, remarks, receivedBy, issueId, oilQty } = data;
 
-    return await prisma.rawMaterialReceipt.create({
+    const result = await prisma.rawMaterialReceipt.create({
         data: {
             production_id: productionId,
-            issue_id: issueId ? Number(issueId) : null,
-            oil_qty: oilQty ? Number(oilQty) : null,
+            // issue_id: issueId ? Number(issueId) : null,
+            // oil_qty: oilQty ? Number(oilQty) : null,
             remarks: remarks,
             received_by: receivedBy,
             status: 'Received'
         }
     });
+
+    // Update new columns via raw SQL
+    try {
+        await prisma.$executeRawUnsafe(
+            `UPDATE raw_material_receipt SET issue_id = $1, oil_qty = $2 WHERE id = $3`,
+            issueId ? Number(issueId) : null,
+            oilQty ? Number(oilQty) : null,
+            result.id
+        );
+    } catch (err) {
+        console.warn('Warning: Could not update RM Receipt new columns via raw SQL:', err.message);
+    }
+
+    return result;
 };
 
 module.exports = {
