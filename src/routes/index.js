@@ -24,5 +24,6 @@ router.use('/production-entry', require('./productionEntryRoutes'));
 router.use('/balance-material-receipt', require('./balanceMaterialReceiptRoutes'));
 router.use('/stock-in', require('./stockInRoutes'));
 router.use('/reports', require('./reportRoutes'));
+router.use('/master', require('./masterRoutes'));
 
 module.exports = router;
